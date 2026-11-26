@@ -112,6 +112,12 @@ export class HostEngine {
       case "addTicket": room.addTicket(pid, { title: msg.title, description: msg.description }); break;
       case "setRule": room.setRule(pid, msg.rule); break;
       case "raiseHand": room.raiseHand(pid, msg.raised); break;
+      case "nudge": {
+        // Only the pinged people hear about it; nothing in the room changes.
+        const { from, targets } = room.nudge(pid, msg.participantId);
+        for (const c of this.conns) if (c.pid && targets.includes(c.pid)) this.safeSend(c, { type: "nudged", from });
+        return;
+      }
       case "finalize": {
         const t = room.finalize(pid, msg.value);
         this.broadcast();

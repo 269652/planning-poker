@@ -28,6 +28,13 @@ describe("organism moods", () => {
     expect(a.sensorAngle).not.toBeCloseTo(b.sensorAngle, 2);
   });
 
+  it("breathes gently within seconds, without shaking the foam apart", () => {
+    const samples = Array.from({ length: 16 }, (_, i) => organismParams(100 + i, calm).sensorDist);
+    const range = Math.max(...samples) - Math.min(...samples);
+    expect(range).toBeGreaterThan(0.8);
+    expect(range).toBeLessThan(4);
+  });
+
   it("agreement calms it into long flowing veins; a split vote makes it restless", () => {
     const base = organismParams(100, calm);
     const harmonious = organismParams(100, { ...calm, harmony: 1 });

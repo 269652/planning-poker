@@ -115,6 +115,21 @@ describe("HostEngine: connections", () => {
     expect(bob.messages.at(-1)).toEqual({ type: "pong" });
   });
 
+  it("delivers a ping only to the people who still have to vote", async () => {
+    const host = await join("Host");
+    const bob = await join("Bob");
+    const cara = await join("Cara");
+    await host.send({ type: "addTicket", title: "T" });
+    await host.send({ type: "selectTicket", ticketId: host.view!.tickets[0].id });
+    await bob.send({ type: "vote", card: 5 });
+    await bob.send({ type: "nudge" });
+    expect(host.messages.filter((m) => m.type === "nudged")).toEqual([{ type: "nudged", from: "Bob" }]);
+    expect(cara.messages.filter((m) => m.type === "nudged")).toEqual([{ type: "nudged", from: "Bob" }]);
+    expect(bob.messages.filter((m) => m.type === "nudged")).toEqual([]);
+    await bob.send({ type: "nudge" });
+    expect(bob.errors.at(-1)!.code).toBe("RATE_LIMITED");
+  });
+
   it("reports every change so the host can persist the room", async () => {
     const host = await join("Host");
     const before = changes;

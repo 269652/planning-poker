@@ -423,6 +423,55 @@ describe("Room: card patterns (who picked the same card is visible, not which ca
   });
 });
 
+describe("Room: pinging people who haven't voted", () => {
+  let room: Room;
+  let t: number;
+  let host: string, bob: string, cara: string, obs: string;
+  beforeEach(() => {
+    t = 1_000_000;
+    let n = 0;
+    room = Room.create({ id: "ROOM01", name: "R", now: () => t, newId: () => `id${++n}` });
+    host = room.join({ name: "Host" }).participant.id;
+    bob = room.join({ name: "Bob" }).participant.id;
+    cara = room.join({ name: "Cara" }).participant.id;
+    obs = room.join({ name: "Olga", role: "observer" }).participant.id;
+    room.selectTicket(host, room.addTicket(host, { title: "T" }).id);
+  });
+
+  it("pings every connected voter who hasn't voted yet (never the sender or observers)", () => {
+    room.vote(bob, 5);
+    expect(room.nudge(host)).toEqual({ from: "Host", targets: [cara] });
+    t += 10_000;
+    expect(room.nudge(obs).targets.sort()).toEqual([cara, host].sort());
+  });
+
+  it("can ping one person, but only someone who still has to vote", () => {
+    expect(room.nudge(bob, cara)).toEqual({ from: "Bob", targets: [cara] });
+    room.vote(cara, 3);
+    t += 10_000;
+    expect(codeOf(() => room.nudge(bob, cara))).toBe("INVALID");
+    expect(codeOf(() => room.nudge(bob, obs))).toBe("INVALID");
+    expect(codeOf(() => room.nudge(bob, "nobody"))).toBe("NOT_FOUND");
+  });
+
+  it("skips disconnected people and reports when nobody is left to ping", () => {
+    room.leave(cara);
+    room.vote(bob, 5);
+    room.vote(host, 5);
+    expect(codeOf(() => room.nudge(host))).toBe("INVALID");
+  });
+
+  it("only while voting, and at most once every 10 seconds per sender", () => {
+    expect(room.nudge(host).targets.length).toBe(2);
+    expect(codeOf(() => room.nudge(host))).toBe("RATE_LIMITED");
+    expect(room.nudge(bob).targets.length).toBe(2);
+    t += 10_000;
+    room.vote(bob, 5);
+    room.reveal(host);
+    expect(codeOf(() => room.nudge(host))).toBe("BAD_PHASE");
+  });
+});
+
 describe("Room: raising a hand", () => {
   it("anyone can raise and lower their hand; it is visible to all", () => {
     const room = makeRoom();

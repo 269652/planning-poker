@@ -1,6 +1,8 @@
 /** Events the UI sends to the living background. Kept free of three.js so the UI can import it cheaply. */
 export type SceneEvent =
   | { kind: "pulse"; x: number; y: number; strength: number; hue?: number }
+  /** A firework shell bursting at (x, y) viewport px: a coloured shockwave, the feelers flinch. */
+  | { kind: "burst"; x: number; y: number; strength: number; hue: number }
   | { kind: "reveal"; agreed: boolean; spread: number }
   | { kind: "new-round" }
   | { kind: "settle" }

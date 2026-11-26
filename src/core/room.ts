@@ -6,9 +6,11 @@ import { type Convergence, analyzeConvergence } from "./convergence";
 
 export const ERROR_CODES = [
   "FORBIDDEN", "NO_TICKET", "BAD_PHASE", "INVALID", "NO_VOTES",
-  "NO_AGREEMENT", "NOT_FOUND", "DUPLICATE", "NOT_JOINED",
+  "NO_AGREEMENT", "NOT_FOUND", "DUPLICATE", "NOT_JOINED", "RATE_LIMITED",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
+
+const NUDGE_COOLDOWN_MS = 10_000;
 
 export class RoomError extends Error {
   constructor(public readonly code: ErrorCode, message: string) {
@@ -342,6 +344,34 @@ export class Room {
 
   raiseHand(actor: string, raised: boolean): void {
     this.participant(actor).handRaised = raised;
+  }
+
+  /** When each participant last pinged (in memory only; a ping is a moment, not room state). */
+  private readonly lastNudge = new Map<string, number>();
+
+  /**
+   * Pings connected voters who haven't voted in the open round — everyone, or one participant.
+   * Anyone may ping, at most once every 10 s. Returns who should be notified.
+   */
+  nudge(actor: string, targetId?: string): { from: string; targets: string[] } {
+    const me = this.participant(actor);
+    const round = this.currentRound();
+    if (round.status !== "voting") throw new RoomError("BAD_PHASE", "Votes are already revealed");
+    const now = this.now();
+    const last = this.lastNudge.get(actor);
+    if (last !== undefined && now - last < NUDGE_COOLDOWN_MS) throw new RoomError("RATE_LIMITED", "You can ping again in a few seconds");
+    const waiting = (p: Participant) => p.role === "voter" && p.connected && !(p.id in round.votes) && p.id !== actor;
+    let targets: string[];
+    if (targetId) {
+      const t = this.participant(targetId);
+      if (!waiting(t)) throw new RoomError("INVALID", `${t.name} has nothing to vote on right now`);
+      targets = [t.id];
+    } else {
+      targets = this.state.participants.filter(waiting).map((p) => p.id);
+      if (targets.length === 0) throw new RoomError("INVALID", "Everyone who can vote has voted");
+    }
+    this.lastNudge.set(actor, now);
+    return { from: me.name, targets };
   }
 
   reveal(actor: string): void {

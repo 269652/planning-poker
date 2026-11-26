@@ -10,9 +10,9 @@ const ISSUE_KEY = /^[A-Z][A-Z0-9_]*-\d+$/i;
 
 export const CLIENT_MESSAGE_TYPES = [
   "join", "vote", "reveal", "nextRound", "nextTicket", "finalize", "reopen", "selectTicket", "removeTicket",
-  "addTicket", "importJira", "retryWriteback", "setRule", "raiseHand", "ping",
+  "addTicket", "importJira", "retryWriteback", "setRule", "raiseHand", "nudge", "ping",
 ] as const;
-export const SERVER_MESSAGE_TYPES = ["welcome", "state", "error", "pong"] as const;
+export const SERVER_MESSAGE_TYPES = ["welcome", "state", "error", "pong", "nudged"] as const;
 
 export type ClientMessage =
   | { type: "join"; roomId: string; name: string; role: Role; token?: string }
@@ -29,13 +29,15 @@ export type ClientMessage =
   | { type: "retryWriteback"; ticketId: string }
   | { type: "setRule"; rule: AgreementRule }
   | { type: "raiseHand"; raised: boolean }
+  | { type: "nudge"; participantId?: string }
   | { type: "ping" };
 
 export type ServerMessage =
   | { type: "welcome"; token: string; you: string }
   | { type: "state"; room: RoomView }
   | { type: "error"; code: string; message: string }
-  | { type: "pong" };
+  | { type: "pong" }
+  | { type: "nudged"; from: string };
 
 function str(o: Record<string, unknown>, k: string, max = 500): string {
   const v = o[k];
@@ -82,6 +84,12 @@ export function parseClientMessage(raw: string): ClientMessage {
     case "setRule":
       if (m.rule !== "unanimous" && m.rule !== "adjacent") throw new ProtocolError("Invalid rule");
       return { type: "setRule", rule: m.rule };
+    case "nudge": {
+      if (m.participantId !== undefined && (typeof m.participantId !== "string" || !m.participantId || m.participantId.length > 100)) {
+        throw new ProtocolError("participantId must be a participant id");
+      }
+      return { type: "nudge", participantId: m.participantId as string | undefined };
+    }
     case "raiseHand":
       if (typeof m.raised !== "boolean") throw new ProtocolError("raised must be true or false");
       return { type: "raiseHand", raised: m.raised };

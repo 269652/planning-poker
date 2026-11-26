@@ -9,8 +9,11 @@ import type { HostState } from "@/net/relay";
 import type { ConnStatus, SocketError } from "@/ui/useRoom";
 import { ticketQueue } from "@/ui/queue";
 import { writebackToasts, type Toast } from "@/ui/toasts";
-import { emitScene } from "@/scenes/bus";
+import { emitScene, pulseFrom } from "@/scenes/bus";
+import { flashTitle, playChime } from "@/ui/chime";
 import { sceneEventsFor } from "@/scenes/events";
+import { firstTryUnanimous } from "@/ui/celebrate";
+import Fireworks from "./Fireworks";
 import BackgroundToggle from "./BackgroundToggle";
 import ParticipantsPanel from "./ParticipantsPanel";
 import TicketList from "./TicketList";
@@ -30,6 +33,7 @@ interface Props {
   helper: HelperStatus;
   jira: JiraGateway | null;
   retryHelper: () => void;
+  nudged: { from: string; id: number } | null;
 }
 
 const PEER_LABEL: Record<HostState, { text: string; tone: string; title: string }> = {
@@ -39,12 +43,14 @@ const PEER_LABEL: Record<HostState, { text: string; tone: string; title: string 
   offline: { text: "Reconnecting…", tone: "bad", title: "Lost the connection to the relay; reconnecting. Guests re-join automatically." },
 };
 
-export default function Board({ view, status, error, dismissError, send, shareUrl, hosting, hostPeer, helper, jira, retryHelper }: Props) {
+export default function Board({ view, status, error, dismissError, send, shareUrl, hosting, hostPeer, helper, jira, retryHelper, nudged }: Props) {
   const [importing, setImporting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [toasts, setToasts] = useState<(Toast & { n: number })[]>([]);
   const prevView = useRef<RoomView | null>(null);
   const toastSeq = useRef(0);
+  const [fireworks, setFireworks] = useState<number | null>(null);
+  const fireworksSeq = useRef(0);
   const isHost = view.hostId === view.you;
   const me = view.participants.find((p) => p.id === view.you);
   const queue = useMemo(() => ticketQueue(view), [view]);
@@ -60,8 +66,23 @@ export default function Board({ view, status, error, dismissError, send, shareUr
   useEffect(() => {
     writebackToasts(prevView.current, view).forEach(push);
     sceneEventsFor(prevView.current, view).forEach(emitScene);
+    const party = firstTryUnanimous(prevView.current, view);
+    if (party) {
+      setFireworks(++fireworksSeq.current);
+      push({ id: `party:${party}`, tone: "good", message: "🎆 Everyone agreed on the first try!" });
+      pulseFrom(document.querySelector(".round-panel, main"), 1.5, 0.14);
+    }
     prevView.current = view;
   }, [view, push]);
+
+  // Someone is waiting for my vote: chime, toast, a ripple from the cards, a blinking tab title.
+  useEffect(() => {
+    if (!nudged) return;
+    playChime();
+    flashTitle("🔔 Your vote, please");
+    push({ id: `nudge:${nudged.id}`, tone: "neutral", message: `🔔 ${nudged.from} is waiting for your vote` });
+    pulseFrom(document.querySelector(".vote-panel"), 1.2, 0.12);
+  }, [nudged, push]);
 
   useEffect(() => {
     if (!error) return;
@@ -128,10 +149,15 @@ export default function Board({ view, status, error, dismissError, send, shareUr
         </main>
         <aside className="col-right">
           <VotePanel ticket={queue.current} me={me ?? null} send={send} />
-          <ParticipantsPanel view={view} />
+          <ParticipantsPanel
+            view={view}
+            voting={!!queue.current && queue.current.status === "open" && queue.current.rounds.at(-1)?.status === "voting"}
+            send={send}
+          />
         </aside>
       </div>
 
+      <Fireworks show={fireworks} />
       <div className="toasts" role="status" aria-live="polite">
         {toasts.map((t) => (
           <div key={t.n} className={`toast ${t.tone}`} onClick={() => close(t.n)}>

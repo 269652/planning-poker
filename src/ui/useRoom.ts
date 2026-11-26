@@ -31,6 +31,8 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
   const [hostPeer, setHostPeer] = useState<HostState>("registering");
   const [helper, setHelper] = useState<HelperStatus>({ state: "checking" });
   const [jira, setJira] = useState<JiraGateway | null>(null);
+  /** The latest ping ("someone is waiting for your vote"); id changes with every ping. */
+  const [nudged, setNudged] = useState<{ from: string; id: number } | null>(null);
   const sendRef = useRef<(m: ClientMessage) => void>(() => {});
   const probeRef = useRef<() => void>(() => {});
   const errId = useRef(0);
@@ -52,6 +54,8 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
             ticketCount: m.room.tickets.length, estimatedCount: m.room.tickets.filter((t) => t.status === "estimated").length,
           });
         }
+      } else if (m.type === "nudged") {
+        setNudged({ from: m.from, id: ++errId.current });
       } else if (m.type === "error") {
         if (m.code === "NOT_FOUND" && !gotView) { setFatal(m.message); return; }
         setError({ code: m.code, message: m.message, id: ++errId.current });
@@ -123,5 +127,5 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
   const dismissError = useCallback(() => setError(null), []);
   const retryHelper = useCallback(() => { setHelper({ state: "checking" }); probeRef.current(); }, []);
 
-  return { view, status, error, fatal, token, send, dismissError, hostPeer, helper, jira, retryHelper };
+  return { view, status, error, fatal, token, send, dismissError, hostPeer, helper, jira, retryHelper, nudged };
 }

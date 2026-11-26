@@ -32,9 +32,12 @@ export function organismParams(t: number, mood: { harmony: number; turbulence: n
   const { harmony: h, turbulence: u, energy: e } = mood;
   // Rates are chosen so the organism visibly changes character within a minute or two.
   const d = (seed: number, rate: number) => drift(t * rate * 2.2, seed);
+  // A slow, gentle pulse in how far and wide it senses: the cells breathe and now and then split or
+  // merge, but stay an ordered, tissue-like foam.
+  const pulse = Math.sin(t * 0.42) * 0.6 + Math.sin(t * 0.17 + 1.3) * 0.4;
   return {
-    sensorAngle: clamp("sensorAngle", (0.62 + 0.28 * d(1, 0.02)) * (1 - 0.4 * h) + 0.2 * u),
-    sensorDist: clamp("sensorDist", 10 + 6 * d(2, 0.017) + 6 * h - 3 * u),
+    sensorAngle: clamp("sensorAngle", (0.62 + 0.28 * d(1, 0.02)) * (1 - 0.4 * h) * (1 + 0.08 * pulse) + 0.2 * u),
+    sensorDist: clamp("sensorDist", 10 + 6 * d(2, 0.017) + 1.2 * pulse + 6 * h - 3 * u),
     turn: clamp("turn", 0.38 + 0.12 * d(3, 0.023) + 0.35 * u - 0.1 * h),
     speed: clamp("speed", 1.05 + 0.25 * d(4, 0.019) + 0.6 * Math.min(e, 1.5) + 0.3 * u),
     wander: clamp("wander", 0.12 + 0.08 * d(5, 0.029) + 0.5 * u - 0.12 * h),

@@ -49,6 +49,12 @@ describe("parseClientMessage", () => {
     expect(() => p({ type: "importJira", issueKeys: Array.from({ length: 201 }, (_, i) => `A-${i + 1}`) })).toThrow(ProtocolError);
   });
 
+  it("validates nudge (everyone who hasn't voted, or one participant)", () => {
+    expect(p({ type: "nudge" })).toEqual({ type: "nudge", participantId: undefined });
+    expect(p({ type: "nudge", participantId: "p1" })).toEqual({ type: "nudge", participantId: "p1" });
+    expect(() => p({ type: "nudge", participantId: 42 })).toThrow(ProtocolError);
+  });
+
   it("validates raiseHand", () => {
     expect(p({ type: "raiseHand", raised: true })).toEqual({ type: "raiseHand", raised: true });
     expect(p({ type: "raiseHand", raised: false })).toEqual({ type: "raiseHand", raised: false });
@@ -72,7 +78,7 @@ describe("message type registry", () => {
       join: { roomId: "R", name: "n" }, vote: { card: 1 }, reveal: {}, nextRound: {}, nextTicket: {}, finalize: {},
       reopen: { ticketId: "t" }, selectTicket: { ticketId: "t" }, removeTicket: { ticketId: "t" },
       addTicket: { title: "t" }, importJira: { issueKeys: ["A-1"] }, retryWriteback: { ticketId: "t" },
-      setRule: { rule: "adjacent" }, raiseHand: { raised: true }, ping: {},
+      setRule: { rule: "adjacent" }, raiseHand: { raised: true }, nudge: {}, ping: {},
     };
     expect(Object.keys(samples).sort()).toEqual([...CLIENT_MESSAGE_TYPES].sort());
     for (const type of CLIENT_MESSAGE_TYPES) expect(() => p({ type, ...(samples[type] as object) }), type).not.toThrow();

@@ -114,6 +114,7 @@ export default function RoomClient() {
       helper={conn.helper}
       jira={conn.jira}
       retryHelper={conn.retryHelper}
+      nudged={conn.nudged}
     />
   );
 }

@@ -64,6 +64,7 @@ Messages are JSON objects with a `type`. The first message must be `join`.
 | `retryWriteback` | `ticketId` | host | Retries a failed Jira write-back. |
 | `setRule` | `rule` (`unanimous`\|`adjacent`) | host | Changes the agreement rule for future reveals. |
 | `raiseHand` | `raised` (boolean) | anyone | Raises/lowers your hand (you want to say something). Hands are lowered automatically on a new round or ticket. |
+| `nudge` | `participantId?` | anyone | Pings connected voters who haven't voted in the open round — everyone, or one participant (who must still have to vote). Each pinged person gets `nudged`; at most one ping per sender every 10 s (`RATE_LIMITED`). |
 | `ping` | – | anyone | Keep-alive; answered with `pong`. |
 
 ### Host → participant
@@ -74,6 +75,7 @@ Messages are JSON objects with a `type`. The first message must be `join`.
 | `state` | `room` (a `RoomView`) | The full, **personalised** room state, sent to every participant after every change. |
 | `error` | `code`, `message` | The request failed; the connection stays open. |
 | `pong` | – | Reply to `ping`. |
+| `nudged` | `from` (name) | Someone is waiting for your vote; the app plays a short chime and shows a toast. Sent only to the pinged people. |
 
 `RoomView` (see `src/core/room.ts`): `id`, `name`, `board` (`{ id, name, type }` or `null`), `rule`, `you`, `hostId`,
 `currentTicketId`, `participants[]` (`id`, `name`, `role`, `connected`, `isHost`, `hasVoted`, `handRaised`) and `tickets[]`.
@@ -97,5 +99,6 @@ share an id (shown as the same procedural card back) while the id reveals nothin
 | `NO_VOTES` | Reveal with no votes. |
 | `NO_AGREEMENT` | `finalize` without value, but the round did not agree. |
 | `DUPLICATE` | Ticket key already on the board. |
+| `RATE_LIMITED` | Too many pings: one `nudge` per sender every 10 seconds. |
 | `JIRA` | The host has no Jira connection (helper not running) or the call to Jira failed (message includes the reason). |
 | `INTERNAL` | Unexpected error in the host's engine (logged in the host's browser console). |

@@ -92,6 +92,7 @@ export function startLivingBackground(canvas: HTMLCanvasElement, opts: { reduced
   const handle = (e: SceneEvent) => {
     switch (e.kind) {
       case "pulse": s.pulse(e.x, e.y, e.strength, e.hue ?? (clock * 0.05) % 1); break;
+      case "burst": s.pulse(e.x, e.y, e.strength, e.hue); organism.startle(1); break;
       case "reveal": {
         const c = centre();
         s.pulse(c.x, c.y, 1.4, e.agreed ? 0.11 : 0.78);
@@ -138,14 +139,18 @@ export function startLivingBackground(canvas: HTMLCanvasElement, opts: { reduced
   const markDirty = () => { fieldDirty = true; };
   // The organism lives on the page: when the page scrolls, it scrolls along.
   let scrollPos = { x: window.scrollX, y: window.scrollY };
-  const onScroll = (e: Event) => {
-    fieldDirty = true;
-    if (e.target !== document && e.target !== document.documentElement && e.target !== window) return;
+  // Page scroll is read once per animation frame (see `loop`), in step with what the browser paints.
+  const syncScroll = (): boolean => {
     const now = { x: window.scrollX, y: window.scrollY };
+    if (now.x === scrollPos.x && now.y === scrollPos.y) return false;
     organism.scroll(now.x - scrollPos.x, now.y - scrollPos.y, width, height);
     scrollPos = now;
+    fieldDirty = true;
+    return true;
   };
-  const mo = new MutationObserver(markDirty);
+  const onScroll = () => { fieldDirty = true; };
+  // The page changing (things appearing, moving) startles the feelers too.
+  const mo = new MutationObserver(() => { fieldDirty = true; organism.startle(0.6); });
   mo.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["class", "style", "open"] });
   window.addEventListener("pointermove", onMove, { passive: true });
   window.addEventListener("pointerdown", onDown, { passive: true });
@@ -161,6 +166,7 @@ export function startLivingBackground(canvas: HTMLCanvasElement, opts: { reduced
   let frames = 0;
   const frame = (dt: number) => {
     clock += dt;
+    syncScroll();
     s.update(dt);
     if (fieldDirty || clock - lastField > 1) drawField();
     const p = organismParams(clock, s);
@@ -209,7 +215,13 @@ export function startLivingBackground(canvas: HTMLCanvasElement, opts: { reduced
   const loop = (now: number) => {
     if (stopped) return;
     raf = requestAnimationFrame(loop);
-    if (document.hidden || now - last < FRAME_MS) return;
+    if (document.hidden) return;
+    const scrolled = syncScroll();
+    if (now - last < FRAME_MS) {
+      // Between simulation ticks, still redraw while scrolling so the organism glides with the page.
+      if (scrolled) organism.draw(clock, s, light, width / height, calm);
+      return;
+    }
     const dt = Math.min(0.1, last ? (now - last) / 1000 : 1 / 30);
     last = now;
     frame(dt);
