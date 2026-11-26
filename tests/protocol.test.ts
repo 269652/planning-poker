@@ -58,3 +58,17 @@ describe("parseClientMessage", () => {
     expect(() => parseClientMessage(JSON.stringify({ type: "addTicket", title: "x".repeat(70_000) }))).toThrow(ProtocolError);
   });
 });
+
+describe("message type registry", () => {
+  it("every registered client type is accepted by the parser (no drift)", async () => {
+    const { CLIENT_MESSAGE_TYPES } = await import("@/core/protocol");
+    const samples: Record<string, unknown> = {
+      join: { roomId: "R", name: "n" }, vote: { card: 1 }, reveal: {}, nextRound: {}, finalize: {},
+      reopen: { ticketId: "t" }, selectTicket: { ticketId: "t" }, removeTicket: { ticketId: "t" },
+      addTicket: { title: "t" }, importJira: { issueKeys: ["A-1"] }, retryWriteback: { ticketId: "t" },
+      setRule: { rule: "adjacent" }, promote: { participantId: "p" }, ping: {},
+    };
+    expect(Object.keys(samples).sort()).toEqual([...CLIENT_MESSAGE_TYPES].sort());
+    for (const type of CLIENT_MESSAGE_TYPES) expect(() => p({ type, ...(samples[type] as object) }), type).not.toThrow();
+  });
+});

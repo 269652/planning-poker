@@ -3,9 +3,11 @@ import { type Card, type NumericCard, isCard, isNumericCard } from "./deck";
 import { type AgreementRule, type VoteStats, analyzeVotes } from "./stats";
 import { type Convergence, analyzeConvergence } from "./convergence";
 
-export type ErrorCode =
-  | "FORBIDDEN" | "NO_TICKET" | "BAD_PHASE" | "INVALID" | "NO_VOTES"
-  | "NO_AGREEMENT" | "NOT_FOUND" | "DUPLICATE" | "NOT_JOINED";
+export const ERROR_CODES = [
+  "FORBIDDEN", "NO_TICKET", "BAD_PHASE", "INVALID", "NO_VOTES",
+  "NO_AGREEMENT", "NOT_FOUND", "DUPLICATE", "NOT_JOINED",
+] as const;
+export type ErrorCode = (typeof ERROR_CODES)[number];
 
 export class RoomError extends Error {
   constructor(public readonly code: ErrorCode, message: string) {

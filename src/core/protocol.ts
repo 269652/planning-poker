@@ -8,6 +8,12 @@ export const MAX_MESSAGE_BYTES = 64 * 1024;
 export const MAX_IMPORT_KEYS = 200;
 const ISSUE_KEY = /^[A-Z][A-Z0-9_]*-\d+$/i;
 
+export const CLIENT_MESSAGE_TYPES = [
+  "join", "vote", "reveal", "nextRound", "finalize", "reopen", "selectTicket", "removeTicket",
+  "addTicket", "importJira", "retryWriteback", "setRule", "promote", "ping",
+] as const;
+export const SERVER_MESSAGE_TYPES = ["welcome", "state", "error", "pong"] as const;
+
 export type ClientMessage =
   | { type: "join"; roomId: string; name: string; role: Role; token?: string }
   | { type: "vote"; card: Card }

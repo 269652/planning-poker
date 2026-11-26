@@ -30,7 +30,8 @@ export interface VoteStats {
 const TOLERANCE: Record<AgreementRule, number> = { unanimous: 0, adjacent: 1 };
 
 export function analyzeVotes(votes: readonly Card[], rule: AgreementRule): VoteStats {
-  const numeric = votes.filter(isNumericCard).sort((a, b) => a - b);
+  const numeric: NumericCard[] = votes.filter(isNumericCard).sort((a, b) => a - b);
+  const nums: number[] = numeric;
   const questionCount = votes.filter((v) => v === "?").length;
   const coffeeCount = votes.filter((v) => v === "coffee").length;
 
@@ -52,10 +53,10 @@ export function analyzeVotes(votes: readonly Card[], rule: AgreementRule): VoteS
 
   const min = numeric[0];
   const max = numeric[numeric.length - 1];
-  const mean = numeric.reduce((a, b) => a + b, 0) / numeric.length;
+  const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
   const mid = Math.floor(numeric.length / 2);
   const median = numeric.length % 2 ? numeric[mid] : (numeric[mid - 1] + numeric[mid]) / 2;
-  const variance = numeric.reduce((a, b) => a + (b - mean) ** 2, 0) / numeric.length;
+  const variance = nums.reduce((a, b) => a + (b - mean) ** 2, 0) / nums.length;
   const spreadSteps = cardIndex(max) - cardIndex(min);
 
   // Mode: highest count, ties -> higher card (iterate ascending, >= wins).
