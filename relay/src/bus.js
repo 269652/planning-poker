@@ -109,6 +109,6 @@ export class RedisBus {
 export function busFromEnv(/** @type {Record<string, string | undefined>} */ env) {
   const url = env.REDIS_URL || env.KV_URL;
   if (url) return new RedisBus(url);
-  console.warn("[relay] No REDIS_URL/KV_URL — using an in-memory bus (only correct on a single instance).");
+  console.log("[relay] No REDIS_URL/KV_URL — in-memory bus: host and guests meet per instance (guests hop until they find the host).");
   return new MemoryBus();
 }

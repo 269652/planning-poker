@@ -92,12 +92,29 @@ export function joinRoom(roomId: string, handlers: {
   let ws: WebSocket | null = null;
   let hostOnline = false;
   let attempt = 0;
+  let hops = 0;
+  let hopping = false;
   let retry: ReturnType<typeof setTimeout> | undefined;
+  let hopTimer: ReturnType<typeof setTimeout> | undefined;
   let ping: ReturnType<typeof setInterval> | undefined;
+
+  /**
+   * Without a shared bus (no Redis) the relay only knows the connections on its own instance. If the
+   * host is not here, reconnect after a moment: Vercel spreads connections over its instances, so a
+   * guest soon lands where the host is (and finds it again after the host itself reconnects).
+   */
+  const scheduleHop = (socket: WebSocket) => {
+    clearTimeout(hopTimer);
+    hopTimer = setTimeout(() => {
+      if (stopped || hostOnline || ws !== socket) return;
+      hopping = true;
+      socket.close();
+    }, Math.min(1500 * 1.5 ** hops++, 10_000));
+  };
 
   const connect = () => {
     if (stopped) return;
-    handlers.onState(attempt === 0 ? "connecting" : "reconnecting");
+    if (!hopping) handlers.onState(attempt === 0 ? "connecting" : "reconnecting");
     const socket = new WebSocket(socketUrl(url, { room: roomId, role: "guest" }));
     ws = socket;
     socket.onopen = () => {
@@ -110,16 +127,23 @@ export function joinRoom(roomId: string, handlers: {
       if (m.type === "host") {
         hostOnline = !!m.online;
         handlers.onState(hostOnline ? "open" : "host-offline");
-        // (Re-)join whenever the host is there: after our reconnect, and after the host's.
-        if (hostOnline) handlers.onOpen();
+        if (hostOnline) {
+          hops = 0;
+          clearTimeout(hopTimer);
+          // (Re-)join whenever the host is there: after our reconnect, and after the host's.
+          handlers.onOpen();
+        } else scheduleHop(socket);
       } else if (m.type === "msg" && typeof m.data === "string") {
         try { handlers.onMessage(JSON.parse(m.data) as ServerMessage); } catch { /* ignore garbage */ }
       }
     };
     socket.onclose = () => {
       clearInterval(ping);
+      clearTimeout(hopTimer);
       if (ws !== socket || stopped) return;
       hostOnline = false;
+      // A deliberate hop: reconnect right away and keep showing "host offline" rather than "reconnecting".
+      if (hopping) { retry = setTimeout(() => { connect(); hopping = false; }, 100); return; }
       handlers.onState("reconnecting");
       retry = setTimeout(connect, backoff(attempt++));
     };
@@ -135,6 +159,7 @@ export function joinRoom(roomId: string, handlers: {
     stop: () => {
       stopped = true;
       clearTimeout(retry);
+      clearTimeout(hopTimer);
       clearInterval(ping);
       ws?.close();
     },

@@ -52,14 +52,16 @@ The relay is the folder [`relay/`](relay/) — a plain Node WebSocket server fol
 
 1. In Vercel, *Add New → Project*, import this GitHub repository and set **Root Directory** to `relay`
    (no framework, no build command). Fluid compute must be on (the default for new projects).
-2. Add Redis from the Vercel Marketplace: <https://vercel.com/marketplace/redis> (Redis Cloud, *Free* plan), or in the
-   project *Storage → Create Database → Redis*, and connect it to the project. This sets `REDIS_URL`; the relay needs it
-   because Vercel may put the host and a guest on different instances. (Upstash for Redis also works if it provides a
-   `redis://`/`rediss://` URL as `REDIS_URL` or `KV_URL` — its REST URL/token alone is not enough for pub/sub.)
-3. Optional: environment variable `RELAY_ORIGINS=https://you.github.io` so only your site may use the relay.
-4. Redeploy, then open `https://<project>.vercel.app/api/relay` — it answers `{"ok":true,…,"bus":"redis"}`
-   (`"memory"` means no Redis URL reached the deployment).
-5. In GitHub, *Settings → Secrets and variables → Actions → Variables*: `RELAY_URL = wss://<project>.vercel.app/api/relay`,
+2. Optional: environment variable `RELAY_ORIGINS=https://you.github.io` so only your site may use the relay.
+3. Open `https://<project>.vercel.app/api/relay` — it answers `{"ok":true,…,"bus":"memory","instance":"…"}`.
+
+**No Redis needed.** Vercel may serve the host and a guest from different instances, and without a shared store a relay
+instance only knows its own connections. A guest that lands on an instance without the host therefore reconnects after a
+moment (1.5 s, growing to 10 s) until it finds the host's instance — Fluid compute keeps few warm instances, so this is
+quick for a small team. Trade-off: the host key is only checked per instance. Optionally, Redis (a `redis://`/`rediss://`
+URL in `REDIS_URL` or `KV_URL`, e.g. Redis Cloud or Upstash from the Vercel Marketplace) routes across instances directly;
+the relay then reports `"bus":"redis"`.
+4. In GitHub, *Settings → Secrets and variables → Actions → Variables*: `RELAY_URL = wss://<project>.vercel.app/api/relay`,
    then re-run the Pages workflow so the site is built with it.
 
 Vercel closes WebSockets at the function's `maxDuration` (300 s, set in [`relay/vercel.json`](relay/vercel.json)); the app

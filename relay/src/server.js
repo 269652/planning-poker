@@ -1,7 +1,11 @@
 // @ts-check
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
 import { attachRelay } from "./relay.js";
+
+/** Identifies this process — without Redis, clients can only meet on the same instance. */
+const INSTANCE = randomUUID().slice(0, 8);
 
 /**
  * HTTP server with the relay attached. GET answers a small health JSON; WebSocket upgrades join
@@ -13,7 +17,7 @@ export function createRelayServer(bus, opts = {}) {
   const origins = (opts.origins ?? []).map((o) => o.trim().replace(/\/+$/, "")).filter(Boolean);
   const server = createServer((_req, res) => {
     res.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "*", "cache-control": "no-store" });
-    res.end(JSON.stringify({ ok: true, service: "planning-poker-relay", bus: bus.kind }));
+    res.end(JSON.stringify({ ok: true, service: "planning-poker-relay", bus: bus.kind, instance: INSTANCE }));
   });
   const wss = new WebSocketServer({
     server,

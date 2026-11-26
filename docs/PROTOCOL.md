@@ -24,9 +24,12 @@ state — it only forwards messages — so the room, the votes and the Jira conn
 * **host key** – a random secret created with the room and kept in the host's browser. The relay stores only its SHA-256
   for the room (30 days after last use); a host connection with another key is closed with `4003`. The same key from a
   newer tab takes over and the older connection is closed with `4009`. Bad parameters are closed with `4400`.
-* **Instances** – Vercel may serve the host and a guest from different function instances, so all routing goes through
-  Redis pub/sub (Redis Cloud or Upstash from the Vercel Marketplace; a `redis://`/`rediss://` URL in `REDIS_URL` or `KV_URL`). Without Redis the relay falls back to an
-  in-memory bus, which is only correct on a single instance (local development).
+* **Instances** – Vercel may serve the host and a guest from different function instances. By default the relay uses an
+  in-memory bus, so a relay instance only knows its own connections: a guest told `{ type: "host", online: false }`
+  reconnects after 1.5 s (growing to 10 s) until it lands on the host's instance ("hopping"), and again after the host
+  itself reconnects elsewhere. The host key is then only checked per instance. With Redis (optional: a `redis://`/`rediss://`
+  URL in `REDIS_URL` or `KV_URL`, e.g. Redis Cloud or Upstash from the Vercel Marketplace) all routing goes through
+  Redis pub/sub and no hopping is needed. The health response (`GET /api/relay`) reports `bus` and `instance`.
 * **Duration limit** – Vercel closes a WebSocket when the function reaches its `maxDuration` (300 s here; up to 800 s on Pro).
   Both sides reconnect with backoff (0.5 s … 10 s). While the host reconnects, guests see "host offline"; when the host is
   back, every guest re-joins with its token and receives the full state again.

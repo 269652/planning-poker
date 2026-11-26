@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import type { Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import { connect, createServer as createNetServer, type AddressInfo, type Server as NetServer } from "node:net";
 // @ts-expect-error — plain JavaScript module
 import { createRelayServer } from "../relay/src/server.js";
 // @ts-expect-error — plain JavaScript module
@@ -17,12 +17,41 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((s) => new Promise((r) => { s.closeAllConnections?.(); s.close(r); })));
 });
 
-async function relayUrl(): Promise<string> {
+async function relayPort(): Promise<number> {
   const server: Server = createRelayServer(new MemoryBus());
   servers.push(server);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  return `ws://127.0.0.1:${(server.address() as AddressInfo).port}/api/relay`;
+  return (server.address() as AddressInfo).port;
 }
+
+async function relayUrl(): Promise<string> {
+  return `ws://127.0.0.1:${await relayPort()}/api/relay`;
+}
+
+/**
+ * Two relays WITHOUT a shared bus (like two Vercel instances without Redis) behind a proxy that
+ * alternates every new connection between them — the worst case for landing on the wrong instance.
+ */
+async function twoInstancesUrl(): Promise<string> {
+  const ports = [await relayPort(), await relayPort()];
+  let next = 0;
+  const open = new Set<import("node:net").Socket>();
+  const proxy = createNetServer((client) => {
+    const upstream = connect(ports[next++ % 2], "127.0.0.1");
+    for (const s of [client, upstream]) { open.add(s); s.on("close", () => open.delete(s)); }
+    client.pipe(upstream).pipe(client);
+    client.on("error", () => upstream.destroy());
+    upstream.on("error", () => client.destroy());
+  });
+  proxy.on("close", () => open.forEach((s) => s.destroy()));
+  const close = proxy.close.bind(proxy);
+  proxy.close = ((cb?: (err?: Error) => void) => { open.forEach((s) => s.destroy()); return close(cb); }) as typeof proxy.close;
+  proxies.push(proxy);
+  await new Promise<void>((r) => proxy.listen(0, "127.0.0.1", r));
+  return `ws://127.0.0.1:${(proxy.address() as AddressInfo).port}/api/relay`;
+}
+const proxies: NetServer[] = [];
+afterEach(async () => { await Promise.all(proxies.splice(0).map((p) => new Promise((r) => p.close(r)))); });
 
 const until = async (pred: () => boolean, ms = 3000) => {
   const end = Date.now() + ms;
@@ -92,4 +121,18 @@ describe("room over the relay (browser client modules + host engine)", () => {
     await until(() => bob.view!.participants.filter((p) => p.name === "Bob").length === 1 && bob.you === firstId);
     expect(bob.view!.participants.find((p) => p.id === firstId)!.connected).toBe(true);
   });
+
+  it("without Redis, guests on another instance hop until they find the host's instance", async () => {
+    const url = await twoInstancesUrl();
+    const engine = new HostEngine({ room: Room.create({ id: "ABCD2345", name: "Hopping" }), jira: null });
+    await engine.connect(() => {}).receive(JSON.stringify({ type: "join", roomId: "ABCD2345", name: "Host" }));
+    const states: HostState[] = [];
+    stops.push(hostRoom(engine, { url, hostKey: "h".repeat(32) }, (s) => states.push(s))); // → instance A
+    await until(() => states.includes("online"));
+    const bob = guest(url, "ABCD2345", "Bob"); // → instance B first: no host there
+    const cara = guest(url, "ABCD2345", "Cara"); // → instance A
+    await until(() => bob.view?.participants.length === 3 && cara.view?.participants.length === 3, 8000);
+    expect(bob.states).toContain("host-offline");
+    expect(bob.states.at(-1)).toBe("open");
+  }, 10_000);
 });
