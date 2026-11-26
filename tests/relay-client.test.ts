@@ -3,7 +3,6 @@ import type { Server } from "node:http";
 import { connect, createServer as createNetServer, type AddressInfo, type Server as NetServer } from "node:net";
 // @ts-expect-error — plain JavaScript module
 import { createRelayServer } from "../relay/src/server.js";
-// @ts-expect-error — plain JavaScript module
 import { MemoryBus } from "../relay/src/bus.js";
 import { Room, type RoomView } from "@/core/room";
 import type { ServerMessage } from "@/core/protocol";

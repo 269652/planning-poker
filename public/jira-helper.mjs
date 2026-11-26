@@ -6,8 +6,10 @@
 // call the few Jira endpoints the app needs. Jira servers usually block browser calls from other
 // sites (CORS); the helper answers those itself.
 //
-//   node jira-helper.mjs --origin https://you.github.io      (reads ./.env.local or ./.env)
-//   node jira-helper.mjs --env path/to/.env --port 8787 --origin http://localhost:3000
+//   node jira-helper.mjs                                   (reads ./.env.local or ./.env)
+//   node jira-helper.mjs --origin https://other.site --env path/to/.env --port 8787
+//
+// This project's sites (Vercel, GitHub Pages, localhost) are always allowed — see DEFAULT_ORIGINS.
 //
 // .env:  JIRA_BASE_URL (or JIRA_URL), JIRA_API_TOKEN (or JIRA_PERSONAL_TOKEN), JIRA_AUTH=basic|bearer,
 //        JIRA_EMAIL (or JIRA_USERNAME; for basic auth), JIRA_STORY_POINTS_FIELD (optional),
@@ -34,6 +36,24 @@ const ROUTES = [
   ["PUT", `/rest/api/2/issue/${KEY}`],
   ["POST", `/rest/api/2/issue/${KEY}/comment`],
 ].map(([method, p]) => ({ method, re: new RegExp(`^${p}$`) }));
+
+/**
+ * Sites that may use the helper without any flags: this project's deployments and local development.
+ * Exact origins only — never a wildcard such as *.vercel.app, since an allowed site acts as your Jira user.
+ */
+export const DEFAULT_ORIGINS = [
+  "https://planning-poker-psi-five.vercel.app",
+  "https://269652.github.io",
+  "http://localhost:3000",
+  "http://localhost:4173",
+];
+
+/** Defaults plus --origin flags plus HELPER_ORIGINS (comma-separated), normalised, without duplicates. */
+export function allowedOrigins(flags, env) {
+  const extra = [...flags, ...(env.HELPER_ORIGINS ?? "").split(",")];
+  const all = [...DEFAULT_ORIGINS, ...extra].map((o) => o.trim().replace(/\/+$/, "")).filter(Boolean);
+  return [...new Set(all)];
+}
 
 /** Parses .env text (comments, `export`, quotes, CRLF). */
 export function parseEnv(text) {
@@ -173,16 +193,17 @@ function loadEnvFile(explicit) {
 }
 
 async function main(argv) {
-  const origins = [];
+  const flagOrigins = [];
   let port;
   let envFile;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--origin") origins.push(...(argv[++i] ?? "").split(",").filter(Boolean));
+    if (a === "--origin") flagOrigins.push(...(argv[++i] ?? "").split(",").filter(Boolean));
     else if (a === "--port") port = Number(argv[++i]);
     else if (a === "--env") envFile = argv[++i];
     else if (a === "-h" || a === "--help") {
-      console.log("Usage: node jira-helper.mjs --origin <planning poker site> [--env .env] [--port 8787]");
+      console.log("Usage: node jira-helper.mjs [--origin <extra site>] [--env .env] [--port 8787]");
+      console.log(`Always allowed: ${DEFAULT_ORIGINS.join(", ")}`);
       return;
     }
   }
@@ -195,11 +216,7 @@ async function main(argv) {
     console.error(file ? `  (read ${file})` : "  No .env file found here — create one with JIRA_BASE_URL and JIRA_API_TOKEN, or pass --env <file>.");
     process.exit(1);
   }
-  if (env.HELPER_ORIGINS) origins.push(...env.HELPER_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean));
-  if (origins.length === 0) {
-    origins.push("http://localhost:3000", "http://localhost:4173");
-    console.log("No --origin given: allowing only local development (localhost:3000, localhost:4173).");
-  }
+  const origins = allowedOrigins(flagOrigins, env);
   port ??= Number(env.HELPER_PORT ?? 8787);
   const server = createJiraHelper({ jira, origins });
   server.listen(port, "127.0.0.1", async () => {

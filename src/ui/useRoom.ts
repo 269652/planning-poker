@@ -7,7 +7,7 @@ import { DEFAULT_HELPER_URL, gatewayForHelper, probeHelper, type HelperStatus } 
 import { MockJira } from "@/jira/mock";
 import type { JiraGateway } from "@/jira/types";
 import { hostRoom, joinRoom, type HostState } from "@/net/relay";
-import { RELAY_URL } from "./site";
+import { relayUrl } from "./site";
 import { LocalStore } from "./storage";
 
 export type ConnStatus = "connecting" | "open" | "reconnecting" | "host-offline";
@@ -37,6 +37,7 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
 
   useEffect(() => {
     if (!enabled) return;
+    const RELAY_URL = relayUrl();
     if (!RELAY_URL) { setFatal("This site has no relay configured (NEXT_PUBLIC_RELAY_URL)"); return; }
     const store = LocalStore.browser();
     let gotView = false;

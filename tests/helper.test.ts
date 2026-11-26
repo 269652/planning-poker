@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { createServer, type Server, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 // The helper is a dependency-free Node script, also served from the site for download.
-import { createJiraHelper, parseEnv, configFromEnv } from "../public/jira-helper.mjs";
+import { createJiraHelper, parseEnv, configFromEnv, allowedOrigins, DEFAULT_ORIGINS } from "../public/jira-helper.mjs";
 
 const servers: Server[] = [];
 afterEach(async () => { await Promise.all(servers.splice(0).map((s) => new Promise((r) => s.close(r)))); });
@@ -54,6 +54,21 @@ describe("parseEnv / configFromEnv (the helper reads credentials from .env; the 
     expect(() => configFromEnv({ JIRA_BASE_URL: "https://j" })).toThrow(/JIRA_API_TOKEN/);
     expect(() => configFromEnv({ JIRA_BASE_URL: "https://j", JIRA_API_TOKEN: "t", JIRA_AUTH: "basic" })).toThrow(/JIRA_EMAIL/);
     expect(() => configFromEnv({ JIRA_BASE_URL: "ftp://j", JIRA_API_TOKEN: "t", JIRA_AUTH: "bearer" })).toThrow(/http/);
+  });
+});
+
+describe("allowedOrigins (which sites may use the helper)", () => {
+  it("allows this project's deployments and local development by default — exact origins only", () => {
+    expect(DEFAULT_ORIGINS).toEqual([
+      "https://planning-poker-psi-five.vercel.app", "https://269652.github.io", "http://localhost:3000", "http://localhost:4173",
+    ]);
+    expect(allowedOrigins([], {})).toEqual(DEFAULT_ORIGINS);
+    expect(DEFAULT_ORIGINS.some((o: string) => o.includes("*"))).toBe(false);
+  });
+
+  it("adds --origin flags and HELPER_ORIGINS, normalised and without duplicates", () => {
+    expect(allowedOrigins(["https://team.example/", "https://269652.github.io"], { HELPER_ORIGINS: " https://other.example , " }))
+      .toEqual([...DEFAULT_ORIGINS, "https://team.example", "https://other.example"]);
   });
 });
 

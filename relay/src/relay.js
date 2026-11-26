@@ -35,11 +35,19 @@ const ch = {
  * @param {import("./bus.js").MemoryBus | import("./bus.js").RedisBus} bus
  */
 export function attachRelay(wss, bus) {
-  wss.on("connection", (ws, req) => {
-    handle(ws, req.url ?? "/", bus).catch((e) => {
-      console.error("[relay]", e);
-      try { ws.close(1011, "relay error"); } catch { /* already closed */ }
-    });
+  wss.on("connection", (ws, req) => handleConnection(ws, req.url ?? "/", bus));
+}
+
+/**
+ * Serves one WebSocket (from a ws server, or from Vercel's upgradeWebSocket()).
+ * @param {import("ws").WebSocket} ws
+ * @param {string} url request URL (path + query, or absolute)
+ * @param {import("./bus.js").MemoryBus | import("./bus.js").RedisBus} bus
+ */
+export function handleConnection(ws, url, bus) {
+  handle(ws, url, bus).catch((e) => {
+    console.error("[relay]", e);
+    try { ws.close(1011, "relay error"); } catch { /* already closed */ }
   });
 }
 

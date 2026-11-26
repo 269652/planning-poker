@@ -45,15 +45,23 @@ branch on every push to `main` or the current default branch (or manually via *R
 One-time setup: repository *Settings → Pages → Source: Deploy from a branch → `gh-pages`, `/ (root)`*, and the repository
 variable `RELAY_URL` (see below).
 
-### The relay on Vercel
+### Hosting on Vercel (site + relay in one project)
 
-The relay is the folder [`relay/`](relay/) — a plain Node WebSocket server following
-[Vercel's WebSocket guide](https://vercel.com/docs/functions/websockets). One-time setup:
+Import this GitHub repository in Vercel (*Add New → Project*, framework Next.js, **Root Directory** = repository root).
+On Vercel the app is built as a normal Next.js deployment that also serves the WebSocket relay at `/api/relay`
+([`src/app/api/relay/route.vercel.ts`](src/app/api/relay/route.vercel.ts), using `upgradeWebSocket()` from
+[`@vercel/functions`](https://vercel.com/docs/functions/websockets)); the site finds it on its own origin — nothing to
+configure. Fluid compute must be on (the default for new projects). Check `https://<project>.vercel.app/api/relay`: it
+answers `{"ok":true,…,"bus":"memory"}`. The GitHub Pages build uses that relay too (`RELAY_URL` variable to override).
 
-1. In Vercel, *Add New → Project*, import this GitHub repository and set **Root Directory** to `relay`
-   (no framework, no build command). Fluid compute must be on (the default for new projects).
-2. Optional: environment variable `RELAY_ORIGINS=https://you.github.io` so only your site may use the relay.
-3. Open `https://<project>.vercel.app/api/relay` — it answers `{"ok":true,…,"bus":"memory","instance":"…"}`.
+### A standalone relay (optional)
+
+The folder [`relay/`](relay/) is the same relay as a plain Node WebSocket server for a separate Vercel project
+(**Root Directory** `relay`, no framework) — useful if the site is hosted somewhere that cannot run it.
+
+1. Optional: environment variable `RELAY_ORIGINS=https://you.github.io` so only your site may use the relay
+   (also honoured by the route in the main project).
+2. Open `https://<project>.vercel.app/api/relay` — it answers `{"ok":true,…,"bus":"memory","instance":"…"}`.
 
 **No Redis needed.** Vercel may serve the host and a guest from different instances, and without a shared store a relay
 instance only knows its own connections. A guest that lands on an instance without the host therefore reconnects after a
@@ -61,10 +69,10 @@ moment (1.5 s, growing to 10 s) until it finds the host's instance — Fluid com
 quick for a small team. Trade-off: the host key is only checked per instance. Optionally, Redis (a `redis://`/`rediss://`
 URL in `REDIS_URL` or `KV_URL`, e.g. Redis Cloud or Upstash from the Vercel Marketplace) routes across instances directly;
 the relay then reports `"bus":"redis"`.
-4. In GitHub, *Settings → Secrets and variables → Actions → Variables*: `RELAY_URL = wss://<project>.vercel.app/api/relay`,
+3. In GitHub, *Settings → Secrets and variables → Actions → Variables*: `RELAY_URL = wss://<project>.vercel.app/api/relay`,
    then re-run the Pages workflow so the site is built with it.
 
-Vercel closes WebSockets at the function's `maxDuration` (300 s, set in [`relay/vercel.json`](relay/vercel.json)); the app
+Vercel closes WebSockets at the function's `maxDuration` (300 s, set in the route and in [`relay/vercel.json`](relay/vercel.json)); the app
 reconnects transparently. Usage is billed like any Vercel Function while connections are open, and Vercel's Hobby plan
 is meant for personal, non-commercial use.
 

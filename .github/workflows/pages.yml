@@ -30,8 +30,8 @@ jobs:
         env:
           # Served from https://<owner>.github.io/<repository>/
           NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
-          # The WebSocket relay on Vercel, e.g. wss://planning-poker-relay.vercel.app/api/relay (repository variable)
-          NEXT_PUBLIC_RELAY_URL: ${{ vars.RELAY_URL }}
+          # The WebSocket relay: the repository variable RELAY_URL, else the relay of the Vercel deployment
+          NEXT_PUBLIC_RELAY_URL: ${{ vars.RELAY_URL || 'wss://planning-poker-psi-five.vercel.app/api/relay' }}
       - name: Publish to gh-pages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

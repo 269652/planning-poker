@@ -3,7 +3,6 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 // @ts-expect-error — plain JavaScript module (deployed to Vercel as-is)
 import { createRelayServer } from "../relay/src/server.js";
-// @ts-expect-error — plain JavaScript module
 import { MemoryBus } from "../relay/src/bus.js";
 
 const servers: Server[] = [];
