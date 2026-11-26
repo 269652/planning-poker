@@ -52,10 +52,13 @@ The relay is the folder [`relay/`](relay/) — a plain Node WebSocket server fol
 
 1. In Vercel, *Add New → Project*, import this GitHub repository and set **Root Directory** to `relay`
    (no framework, no build command). Fluid compute must be on (the default for new projects).
-2. In the project, *Storage → Upstash → Redis* (Vercel Marketplace, free tier) and connect it to the project. This sets
-   `REDIS_URL`/`KV_URL`; the relay needs it because Vercel may put the host and a guest on different instances.
+2. Add Redis from the Vercel Marketplace: <https://vercel.com/marketplace/redis> (Redis Cloud, *Free* plan), or in the
+   project *Storage → Create Database → Redis*, and connect it to the project. This sets `REDIS_URL`; the relay needs it
+   because Vercel may put the host and a guest on different instances. (Upstash for Redis also works if it provides a
+   `redis://`/`rediss://` URL as `REDIS_URL` or `KV_URL` — its REST URL/token alone is not enough for pub/sub.)
 3. Optional: environment variable `RELAY_ORIGINS=https://you.github.io` so only your site may use the relay.
-4. Redeploy, then open `https://<project>.vercel.app/api/relay` — it answers `{"ok":true,…,"bus":"redis"}`.
+4. Redeploy, then open `https://<project>.vercel.app/api/relay` — it answers `{"ok":true,…,"bus":"redis"}`
+   (`"memory"` means no Redis URL reached the deployment).
 5. In GitHub, *Settings → Secrets and variables → Actions → Variables*: `RELAY_URL = wss://<project>.vercel.app/api/relay`,
    then re-run the Pages workflow so the site is built with it.
 

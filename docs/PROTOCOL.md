@@ -25,7 +25,7 @@ state — it only forwards messages — so the room, the votes and the Jira conn
   for the room (30 days after last use); a host connection with another key is closed with `4003`. The same key from a
   newer tab takes over and the older connection is closed with `4009`. Bad parameters are closed with `4400`.
 * **Instances** – Vercel may serve the host and a guest from different function instances, so all routing goes through
-  Redis pub/sub (Upstash from the Vercel Marketplace; `REDIS_URL` or `KV_URL`). Without Redis the relay falls back to an
+  Redis pub/sub (Redis Cloud or Upstash from the Vercel Marketplace; a `redis://`/`rediss://` URL in `REDIS_URL` or `KV_URL`). Without Redis the relay falls back to an
   in-memory bus, which is only correct on a single instance (local development).
 * **Duration limit** – Vercel closes a WebSocket when the function reaches its `maxDuration` (300 s here; up to 800 s on Pro).
   Both sides reconnect with backoff (0.5 s … 10 s). While the host reconnects, guests see "host offline"; when the host is
