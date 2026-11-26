@@ -1,0 +1,31 @@
+{
+  "name": "planning-poker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Realtime Scrum Planning Poker (Next.js + WebSockets) with Jira board import and estimate write-back",
+  "engines": { "node": ">=20.9" },
+  "scripts": {
+    "dev": "tsx server.ts",
+    "build": "next build",
+    "start": "NODE_ENV=production tsx server.ts",
+    "demo": "JIRA_MOCK=1 tsx server.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "^16.4.6",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tsx": "^4.23.15",
+    "ws": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.3.3",
+    "@types/react-dom": "^19.3.0",
+    "@types/ws": "^8.18.2",
+    "typescript": "^5.9.0",
+    "vitest": "^5.1.2"
+  }
+}
