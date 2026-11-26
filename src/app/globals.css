@@ -135,6 +135,15 @@ ul.tickets li.empty { border-style: dashed; padding: .6rem; }
 .small-deck .card { flex-basis: 44px; }
 .sidebar-deck .card.selected { transform: translateY(-4px); }
 
+/* animated background switch */
+.landing-title { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.landing-title h1 { margin: 0; }
+.bg-toggle { display: inline-flex; align-items: center; gap: .45rem; padding: .3rem .65rem; border-radius: 999px; color: var(--muted); }
+.bg-toggle .switch { position: relative; width: 26px; height: 15px; border-radius: 999px; background: var(--border); transition: background .2s; flex: 0 0 auto; }
+.bg-toggle .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--panel); box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: transform .2s; }
+.bg-toggle .switch.on { background: var(--primary); }
+.bg-toggle .switch.on::after { transform: translateX(11px); }
+
 /* hosting & the local Jira helper */
 .how ul { margin: 0 0 .75rem; padding-left: 1.1rem; } .how li { margin-bottom: .3rem; }
 .helper { border: 1px solid var(--border); border-left: 4px solid var(--muted); border-radius: 10px; padding: .65rem .85rem; background: var(--bg); }

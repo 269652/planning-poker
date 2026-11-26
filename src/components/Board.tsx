@@ -11,6 +11,7 @@ import { ticketQueue } from "@/ui/queue";
 import { writebackToasts, type Toast } from "@/ui/toasts";
 import { emitScene } from "@/scenes/bus";
 import { sceneEventsFor } from "@/scenes/events";
+import BackgroundToggle from "./BackgroundToggle";
 import ParticipantsPanel from "./ParticipantsPanel";
 import TicketList from "./TicketList";
 import RoundPanel from "./RoundPanel";
@@ -83,6 +84,7 @@ export default function Board({ view, status, error, dismissError, send, shareUr
           </span>
         </div>
         <div className="topbar-right">
+          <BackgroundToggle />
           {hosting
             ? <span className={`chip ${PEER_LABEL[hostPeer].tone}`} title={PEER_LABEL[hostPeer].title}>{PEER_LABEL[hostPeer].text}</span>
             : <span className={`dot ${status === "open" ? "on" : "off"}`} title={status === "open" ? "Connected to the host" : "Not connected to the host"} />}

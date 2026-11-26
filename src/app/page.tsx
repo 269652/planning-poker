@@ -6,6 +6,7 @@ import { Room } from "@/core/room";
 import { newRoomId, parseRoomCode } from "@/core/roomId";
 import { gatewayForHelper, probeHelper, type HelperStatus } from "@/jira/helper";
 import type { JiraBoard } from "@/jira/types";
+import BackgroundToggle from "@/components/BackgroundToggle";
 import BoardPicker from "@/components/BoardPicker";
 import HelperPanel from "@/components/HelperPanel";
 import { relativeTime } from "@/ui/format";
@@ -98,7 +99,10 @@ export default function Home() {
   return (
     <main className="landing">
       <header className="landing-head">
-        <h1>Planning Poker</h1>
+        <div className="landing-title">
+          <h1>Planning Poker</h1>
+          <BackgroundToggle />
+        </div>
         <p className="muted">Estimate Jira tickets together, in realtime — one session per board. Rounds repeat until the team agrees, then the estimate is written back to Jira.</p>
       </header>
 

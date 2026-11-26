@@ -1,12 +1,27 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { BACKGROUND_EVENT, backgroundEnabled } from "@/ui/preferences";
 
 /**
  * The living background: a slime-mould organism (three.js, loaded lazily) that grows around the UI
- * and reacts to the cursor, clicks, typing and what happens in the room. `?debug` exposes a rendered
- * pixel probe on the canvas (data-organism). Without WebGL the plain page background stays.
+ * and reacts to the cursor, clicks, typing and what happens in the room. Can be switched off per
+ * browser (BackgroundToggle); then nothing is loaded. `?debug` exposes a rendered pixel probe on
+ * the canvas (data-organism). Without WebGL the plain page background stays.
  */
 export default function Backdrop() {
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    setEnabled(backgroundEnabled());
+    const onChange = (e: Event) => setEnabled((e as CustomEvent<boolean>).detail);
+    window.addEventListener(BACKGROUND_EVENT, onChange);
+    return () => window.removeEventListener(BACKGROUND_EVENT, onChange);
+  }, []);
+
+  return enabled ? <LivingCanvas /> : null;
+}
+
+function LivingCanvas() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [ready, setReady] = useState(false);
   const [instant, setInstant] = useState(false);
