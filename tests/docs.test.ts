@@ -29,9 +29,16 @@ describe("documentation is aligned with the code", () => {
     for (const c of [...ERROR_CODES, "BAD_MESSAGE", "JIRA", "INTERNAL"]) expect(doc, `error ${c}`).toContain(`\`${c}\``);
   });
 
-  it("PROTOCOL.md documents the WebRTC transport and how a room code finds its host", () => {
+  it("PROTOCOL.md documents the WebSocket relay (envelopes, host key, close codes, Vercel limits)", () => {
     const doc = read("docs/PROTOCOL.md");
-    for (const w of ["WebRTC", "PeerJS", "ppoker-", "data channel", "/room/#"]) expect(doc, w).toContain(w);
+    for (const w of ["WebSocket relay", "role=host", "role=guest", "host key", "4003", "4009", "4400", "Redis", "maxDuration", "/room/#"]) {
+      expect(doc, w).toContain(w);
+    }
+  });
+
+  it("README explains how to deploy the relay to Vercel", () => {
+    const readme = read("README.md");
+    for (const w of ["Vercel", "Root Directory", "relay", "Upstash", "RELAY_URL", "npm run relay"]) expect(readme, w).toContain(w);
   });
 
   it("JIRA.md documents the local Jira helper (credentials in .env, origins, allowed endpoints)", () => {

@@ -110,7 +110,7 @@ export default function Home() {
         <h2>How it works</h2>
         <ul className="small">
           <li><b>Hosting a room needs the Jira helper</b>, a small program that runs on the host&apos;s computer and is connected to Jira with the host&apos;s credentials. The room itself runs in the host&apos;s browser tab — keep it open during the session.</li>
-          <li><b>Guests need nothing</b> but the invite link: no Jira access, no setup. Everyone connects directly to the host (WebRTC); tickets and results are streamed from the host.</li>
+          <li><b>Guests need nothing</b> but the invite link: no Jira access, no setup. Everyone connects to the host through a small relay; tickets and results are streamed from the host.</li>
         </ul>
         <HelperPanel
           status={helper}

@@ -1,22 +1,39 @@
 # Protocol
 
-There is no server. The app is a static site (e.g. GitHub Pages); a room **runs in the host's browser tab**
-(`src/host/engine.ts`) and everyone else connects to it peer-to-peer over **WebRTC**.
+The site is static (e.g. GitHub Pages). A room **runs in the host's browser tab** (`src/host/engine.ts`); the host and
+the guests exchange messages through a small **WebSocket relay** (`relay/`, deployed to Vercel). The relay keeps no room
+state — it only forwards messages — so the room, the votes and the Jira connection stay with the host.
 
-## Transport
+## Transport: the WebSocket relay
 
-* **Signaling** – [PeerJS](https://peerjs.com) with its free public signaling server. It only brokers the WebRTC handshake
-  (session descriptions and network candidates, i.e. IP addresses); no room data passes through it.
-* **Finding the host** – the host registers the peer id `ppoker-<CODE>` (e.g. `ppoker-ABCD2345`) derived from the room code,
-  so the invite link `https://<site>/room/#ABCD2345` is all a guest needs. The code is in the URL fragment (`/room/#…`),
-  which is never sent to the web server, and one static page serves every room.
-* **Messages** – JSON over a reliable, encrypted (DTLS) WebRTC **data channel** per guest. Large messages are chunked by PeerJS.
-* **The host's own tab** joins its room through an in-memory link with exactly the same protocol.
-* **Reconnects** – guests redial with backoff (1 s … 10 s) and re-join with their token. If the host's tab is closed, guests
-  see "host offline" and keep retrying. If the host loses the signaling server, open data channels keep working and the
-  host re-registers. A second tab hosting the same room is refused (`unavailable-id`) and retries.
-* **NAT** – STUN only (no TURN relay). Most home and office networks work; very restrictive networks (symmetric NAT,
-  UDP blocked) can prevent a guest from connecting.
+* **Connect** – `wss://<relay>/api/relay?room=CODE&role=host&key=SECRET` (host) or `?room=CODE&role=guest` (guest).
+  The invite link `https://<site>/room/#ABCD2345` carries only the code (in the URL fragment, never sent to a server).
+* **Envelopes** (JSON text frames; the app protocol below travels as a string in `data`):
+
+| Direction | Message | Meaning |
+| --- | --- | --- |
+| guest → relay | `{ data }` | Forward to the host. |
+| relay → guest | `{ type: "host", online }` | The host is (not) connected; on `online: true` the guest (re-)sends `join` with its token. |
+| relay → guest | `{ type: "msg", data }` | A message from the host. |
+| host → relay | `{ to: peer, data }` | Forward to one guest connection. |
+| relay → host | `{ type: "open" | "close", peer }` | A guest connection appeared/disappeared (`peer` = random id per connection). |
+| relay → host | `{ type: "msg", peer, data }` | A message from that guest. |
+| both | `{ type: "ping" }` → `{ type: "pong" }` | Heartbeat every 25 s (keeps idle connections and the host's presence alive). |
+| relay → both | `{ type: "error", message }` | Malformed envelope; the connection stays open. |
+
+* **host key** – a random secret created with the room and kept in the host's browser. The relay stores only its SHA-256
+  for the room (30 days after last use); a host connection with another key is closed with `4003`. The same key from a
+  newer tab takes over and the older connection is closed with `4009`. Bad parameters are closed with `4400`.
+* **Instances** – Vercel may serve the host and a guest from different function instances, so all routing goes through
+  Redis pub/sub (Upstash from the Vercel Marketplace; `REDIS_URL` or `KV_URL`). Without Redis the relay falls back to an
+  in-memory bus, which is only correct on a single instance (local development).
+* **Duration limit** – Vercel closes a WebSocket when the function reaches its `maxDuration` (300 s here; up to 800 s on Pro).
+  Both sides reconnect with backoff (0.5 s … 10 s). While the host reconnects, guests see "host offline"; when the host is
+  back, every guest re-joins with its token and receives the full state again.
+* **The host's own tab** joins its room through an in-memory link with exactly the same app protocol.
+* **Privacy** – the relay sees the forwarded messages (TLS protects them in transit). Hidden votes are only ever sent by a
+  guest to the host and never forwarded to other guests.
+* **Limits** – frames up to 256 KiB; `data` up to 200 KiB. Optional `RELAY_ORIGINS` restricts which sites may connect.
 
 The engine validates every incoming message (size ≤ 64 KiB, strict shapes); invalid input yields a `BAD_MESSAGE` error
 and the connection stays open. Guests are untrusted: host-only actions are checked by the engine, and only the

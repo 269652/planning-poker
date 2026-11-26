@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { cardLabel, trendLabel, joinUrlFor, writebackLabel } from "@/ui/format";
-import { newRoomId, parseRoomCode, peerIdFor } from "@/core/roomId";
+import { newRoomId, parseRoomCode } from "@/core/roomId";
 
 describe("ui format helpers", () => {
   it("labels cards", () => {
@@ -36,10 +36,6 @@ describe("ui format helpers", () => {
 describe("room codes", () => {
   it("generates 8-character codes without look-alike characters", () => {
     for (let i = 0; i < 50; i++) expect(newRoomId()).toMatch(/^[A-HJKMNP-Z2-9]{8}$/);
-  });
-
-  it("derives the host's WebRTC peer id from the code", () => {
-    expect(peerIdFor("abcd2345")).toBe("ppoker-ABCD2345");
   });
 
   it("reads a code from user input or a pasted invite link", () => {

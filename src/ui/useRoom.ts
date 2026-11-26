@@ -6,7 +6,8 @@ import { HostEngine, type PeerLink } from "@/host/engine";
 import { DEFAULT_HELPER_URL, gatewayForHelper, probeHelper, type HelperStatus } from "@/jira/helper";
 import { MockJira } from "@/jira/mock";
 import type { JiraGateway } from "@/jira/types";
-import { hostRoom, joinRoom, type HostPeerState } from "@/net/peer";
+import { hostRoom, joinRoom, type HostState } from "@/net/relay";
+import { RELAY_URL } from "./site";
 import { LocalStore } from "./storage";
 
 export type ConnStatus = "connecting" | "open" | "reconnecting" | "host-offline";
@@ -18,7 +19,7 @@ export function helperUrl(): string {
 
 /**
  * Connects this tab to a room. The host's tab runs the room itself (HostEngine) and opens it to
- * guests over WebRTC; guests connect to the host. Both get the same view/send interface.
+ * guests through the WebSocket relay; guests connect to the host the same way. Both get the same view/send interface.
  */
 export function useRoom(opts: { roomId: string; name: string; role: Role; enabled: boolean; hosting: boolean }) {
   const { roomId, name, role, enabled, hosting } = opts;
@@ -27,7 +28,7 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
   const [error, setError] = useState<SocketError | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
   const [token, setToken] = useState<string | undefined>();
-  const [hostPeer, setHostPeer] = useState<HostPeerState>("registering");
+  const [hostPeer, setHostPeer] = useState<HostState>("registering");
   const [helper, setHelper] = useState<HelperStatus>({ state: "checking" });
   const [jira, setJira] = useState<JiraGateway | null>(null);
   const sendRef = useRef<(m: ClientMessage) => void>(() => {});
@@ -36,6 +37,7 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
 
   useEffect(() => {
     if (!enabled) return;
+    if (!RELAY_URL) { setFatal("This site has no relay configured (NEXT_PUBLIC_RELAY_URL)"); return; }
     const store = LocalStore.browser();
     let gotView = false;
     const deliver = (m: ServerMessage) => {
@@ -90,7 +92,7 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
       sendRef.current = (m) => { void link?.receive(JSON.stringify(m)); };
       void link.receive(JSON.stringify(join()));
       setStatus("open");
-      const stopPeer = hostRoom(engine, (s) => setHostPeer(s));
+      const stopPeer = hostRoom(engine, { url: RELAY_URL, hostKey: store.hostKey(roomId) }, (s) => setHostPeer(s));
       const onHide = () => save();
       window.addEventListener("pagehide", onHide);
       return () => {
@@ -109,7 +111,7 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
       onOpen: () => guest.send(join()),
       onMessage: deliver,
       onState: (s) => setStatus(s === "open" ? "open" : s === "host-offline" ? "host-offline" : s === "connecting" ? "connecting" : "reconnecting"),
-    });
+    }, RELAY_URL);
     sendRef.current = (m) => {
       if (!guest.send(m)) setError({ code: "OFFLINE", message: "Not connected to the host — reconnecting…", id: ++errId.current });
     };

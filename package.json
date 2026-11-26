@@ -2,7 +2,7 @@
   "name": "planning-poker",
   "version": "0.1.0",
   "private": true,
-  "description": "Realtime Scrum Planning Poker that runs entirely in the browser (Next.js static export + WebRTC), with Jira import and estimate write-back from the host's browser",
+  "description": "Realtime Scrum Planning Poker: a static site where the host's browser runs the room, connected through a WebSocket relay on Vercel, with Jira import and write-back via a local helper",
   "engines": {
     "node": ">=20.9"
   },
@@ -13,11 +13,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "jira-helper": "node public/jira-helper.mjs"
+    "jira-helper": "node public/jira-helper.mjs",
+    "relay": "node relay/dev.js"
   },
   "dependencies": {
     "next": "^16.4.6",
-    "peerjs": "1.5.5",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "three": "0.170.0"
@@ -27,7 +27,9 @@
     "@types/react": "^19.3.3",
     "@types/react-dom": "^19.3.0",
     "@types/three": "0.170.0",
+    "ioredis": "5.4.2",
     "typescript": "^5.9.0",
-    "vitest": "^5.1.2"
+    "vitest": "^5.1.2",
+    "ws": "8.23.0"
   }
 }

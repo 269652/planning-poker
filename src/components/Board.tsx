@@ -5,7 +5,7 @@ import type { ClientMessage } from "@/core/protocol";
 import type { RoomView } from "@/core/room";
 import type { HelperStatus } from "@/jira/helper";
 import type { JiraGateway } from "@/jira/types";
-import type { HostPeerState } from "@/net/peer";
+import type { HostState } from "@/net/relay";
 import type { ConnStatus, SocketError } from "@/ui/useRoom";
 import { ticketQueue } from "@/ui/queue";
 import { writebackToasts, type Toast } from "@/ui/toasts";
@@ -26,17 +26,17 @@ interface Props {
   send: (m: ClientMessage) => void;
   shareUrl: string;
   hosting: boolean;
-  hostPeer: HostPeerState;
+  hostPeer: HostState;
   helper: HelperStatus;
   jira: JiraGateway | null;
   retryHelper: () => void;
 }
 
-const PEER_LABEL: Record<HostPeerState, { text: string; tone: string; title: string }> = {
-  registering: { text: "Opening room…", tone: "", title: "Registering with the signaling server" },
+const PEER_LABEL: Record<HostState, { text: string; tone: string; title: string }> = {
+  registering: { text: "Opening room…", tone: "", title: "Connecting to the relay" },
   online: { text: "Open for guests", tone: "good", title: "Guests can join with the invite link while this tab stays open" },
-  taken: { text: "Open in another tab?", tone: "bad", title: "This room is already hosted in another tab or window (or the previous tab is still closing). Retrying…" },
-  offline: { text: "Signaling offline", tone: "bad", title: "Cannot reach the PeerJS signaling server; guests who are connected stay connected. Retrying…" },
+  taken: { text: "Hosted elsewhere", tone: "bad", title: "This room is now hosted in another tab or browser. Reload this tab to host it here again." },
+  offline: { text: "Reconnecting…", tone: "bad", title: "Lost the connection to the relay; reconnecting. Guests re-join automatically." },
 };
 
 export default function Board({ view, status, error, dismissError, send, shareUrl, hosting, hostPeer, helper, jira, retryHelper }: Props) {

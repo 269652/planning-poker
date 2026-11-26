@@ -1,0 +1,16 @@
+{
+  "name": "planning-poker-relay",
+  "private": true,
+  "description": "WebSocket relay for Planning Poker (deploy this folder to Vercel; add Upstash Redis for REDIS_URL/KV_URL)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node dev.js"
+  },
+  "dependencies": {
+    "ioredis": "5.4.2",
+    "ws": "8.23.0"
+  }
+}

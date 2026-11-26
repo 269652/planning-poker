@@ -19,6 +19,7 @@ const HOST = "poker:host:";
 const JOINED = "poker:joined:";
 const TOKEN = "poker:token:";
 const DEMO = "poker:demo:";
+const HOSTKEY = "poker:hostkey:";
 
 /**
  * Browser storage for rooms. A hosted room's full state lives here (the host's browser *is* the
@@ -67,11 +68,22 @@ export class LocalStore {
   isDemo(roomId: string): boolean { return this.get(DEMO + roomId) === "1"; }
   setDemo(roomId: string): void { this.set(DEMO + roomId, "1"); }
 
+  /** The secret that proves to the relay that this browser hosts the room (created on first use). */
+  hostKey(roomId: string): string {
+    const existing = this.get(HOSTKEY + roomId);
+    if (existing) return existing;
+    const bytes = new Uint8Array(32);
+    globalThis.crypto.getRandomValues(bytes);
+    const key = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+    this.set(HOSTKEY + roomId, key);
+    return key;
+  }
+
   getName(): string { return this.get("poker:name") ?? ""; }
   setName(name: string): void { this.set("poker:name", name.trim()); }
 
   forget(roomId: string): void {
-    this.del(HOST + roomId); this.del(JOINED + roomId); this.del(TOKEN + roomId); this.del(DEMO + roomId);
+    this.del(HOST + roomId); this.del(JOINED + roomId); this.del(TOKEN + roomId); this.del(DEMO + roomId); this.del(HOSTKEY + roomId);
   }
 
   sessions(): SessionEntry[] {

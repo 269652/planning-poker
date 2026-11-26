@@ -8,14 +8,6 @@ export function newRoomId(): string {
   return [...bytes].map((b) => ALPHABET[b % ALPHABET.length]).join("");
 }
 
-/**
- * The host registers this id with the PeerJS signaling server, so the room code alone is
- * everything a guest needs to find the host.
- */
-export function peerIdFor(roomId: string): string {
-  return `ppoker-${roomId.toUpperCase()}`;
-}
-
 /** Accepts a code ("abcd2345"), "#ABCD2345" or a full invite link. */
 export function parseRoomCode(input: string): string | null {
   const s = input.trim();

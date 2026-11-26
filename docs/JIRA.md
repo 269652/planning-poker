@@ -113,7 +113,7 @@ When a Jira ticket is finalized, `writeback.status` moves `none → pending → 
 
 ## Security notes
 
-* Credentials stay in the helper's `.env` on the host's machine; the browser, the room's guests and the signaling server never see them.
+* Credentials stay in the helper's `.env` on the host's machine; the browser, the room's guests and the relay never see them.
 * The room (tickets, history, participant tokens) is stored in the host's browser (`localStorage`). Guests store only their own token.
 * Issue descriptions are rendered from a safe subset of Jira wiki markup as plain React text (never as HTML); only `http(s)` links are clickable.
 * Anyone who knows a room code can join that room while the host has it open. Codes are 8 characters from a 31-letter alphabet (~40 bits); share invite links only with your team.

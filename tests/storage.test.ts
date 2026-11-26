@@ -43,6 +43,16 @@ describe("LocalStore (rooms live in the host's browser)", () => {
     expect(store.getToken("HOST2345")).toBeUndefined();
   });
 
+  it("keeps a secret host key per hosted room (created once, then stable)", () => {
+    const store = new LocalStore(new MemoryStorage());
+    const key = store.hostKey("ROOM2345");
+    expect(key).toMatch(/^[0-9a-f]{64}$/);
+    expect(store.hostKey("ROOM2345")).toBe(key);
+    expect(store.hostKey("OTHR2345")).not.toBe(key);
+    store.forget("ROOM2345");
+    expect(store.hostKey("ROOM2345")).not.toBe(key);
+  });
+
   it("survives corrupt entries and unavailable storage", () => {
     const s = new MemoryStorage();
     s.setItem("poker:host:BAD23456", "{not json");

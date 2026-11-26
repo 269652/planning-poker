@@ -1,11 +1,11 @@
 # Planning Poker
 
-Realtime Scrum planning poker that runs **entirely in the browser** — a static site (e.g. GitHub Pages), no server.
+Realtime Scrum planning poker: a static site (e.g. GitHub Pages) plus a tiny WebSocket relay (on Vercel).
 Import real tickets from a Jira board, estimate them together, and have the agreed story points written back to Jira
 with an anonymous summary of the rounds.
 
-* **The host's browser runs the room.** Everyone else connects to it peer-to-peer over **WebRTC**; the invite link
-  (`…/room/#ABCD2345`) contains everything needed to find the host.
+* **The host's browser runs the room.** Everyone else connects to it through the **relay**, which only forwards messages
+  (no room state). The invite link (`…/room/#ABCD2345`) is all a guest needs.
 * **Only the host needs Jira**: a small local **Jira helper** on the host's computer holds the credentials (from a `.env` file)
   and lets the page talk to Jira. Guests need nothing but the link.
 * Deck: `0 1 2 3 5 8 13 21 34 55 89 100` plus `?` and `☕` (coffee).
@@ -20,7 +20,8 @@ Requires Node.js ≥ 20.9 to develop; the helper needs Node ≥ 18.
 ```bash
 git clone <this repo> && cd planning-poker
 npm install
-npm run dev                # http://localhost:3000 — in development you can also create a demo room with fake Jira data
+npm run relay              # local relay on ws://localhost:8788/api/relay (in-memory, no Redis needed)
+npm run dev                # second terminal: http://localhost:3000 — you can also create a demo room with fake Jira data
 ```
 
 To host with your real Jira, create a `.env` (see [`.env.example`](.env.example)) and start the helper in a second terminal:
@@ -35,13 +36,32 @@ second browser/profile to play both sides.
 ### Static build and GitHub Pages
 
 ```bash
-npm run build              # static export into ./out (set NEXT_PUBLIC_BASE_PATH=/repo-name for a project page)
+npm run build              # static export into ./out (set NEXT_PUBLIC_BASE_PATH=/repo-name and NEXT_PUBLIC_RELAY_URL)
 npm run preview            # serves ./out like GitHub Pages would, on http://localhost:4173
 ```
 
 [`.github/workflows/pages.yml`](.github/workflows/pages.yml) tests, builds and publishes the site to the `gh-pages`
 branch on every push to `main` or the current default branch (or manually via *Run workflow*).
-One-time setup: repository *Settings → Pages → Source: Deploy from a branch → `gh-pages`, `/ (root)`*.
+One-time setup: repository *Settings → Pages → Source: Deploy from a branch → `gh-pages`, `/ (root)`*, and the repository
+variable `RELAY_URL` (see below).
+
+### The relay on Vercel
+
+The relay is the folder [`relay/`](relay/) — a plain Node WebSocket server following
+[Vercel's WebSocket guide](https://vercel.com/docs/functions/websockets). One-time setup:
+
+1. In Vercel, *Add New → Project*, import this GitHub repository and set **Root Directory** to `relay`
+   (no framework, no build command). Fluid compute must be on (the default for new projects).
+2. In the project, *Storage → Upstash → Redis* (Vercel Marketplace, free tier) and connect it to the project. This sets
+   `REDIS_URL`/`KV_URL`; the relay needs it because Vercel may put the host and a guest on different instances.
+3. Optional: environment variable `RELAY_ORIGINS=https://you.github.io` so only your site may use the relay.
+4. Redeploy, then open `https://<project>.vercel.app/api/relay` — it answers `{"ok":true,…,"bus":"redis"}`.
+5. In GitHub, *Settings → Secrets and variables → Actions → Variables*: `RELAY_URL = wss://<project>.vercel.app/api/relay`,
+   then re-run the Pages workflow so the site is built with it.
+
+Vercel closes WebSockets at the function's `maxDuration` (300 s, set in [`relay/vercel.json`](relay/vercel.json)); the app
+reconnects transparently. Usage is billed like any Vercel Function while connections are open, and Vercel's Hobby plan
+is meant for personal, non-commercial use.
 
 ## How a session works
 
@@ -71,7 +91,7 @@ The exact rules (agreement, convergence score, trends) are specified in [docs/ME
 | Document | Contents |
 | --- | --- |
 | [docs/MECHANICS.md](docs/MECHANICS.md) | Deck, round lifecycle, ticket queue, agreement rules, statistics, convergence score & trends, roles, persistence |
-| [docs/PROTOCOL.md](docs/PROTOCOL.md) | WebRTC transport (PeerJS), messages, error codes |
+| [docs/PROTOCOL.md](docs/PROTOCOL.md) | WebSocket relay (envelopes, host key, reconnects), messages, error codes |
 | [docs/JIRA.md](docs/JIRA.md) | The local Jira helper (`.env`, origins, allowed endpoints), import, write-back, security |
 
 ## The living background
@@ -98,7 +118,8 @@ wraps around them and gathers where you work (hovered and focused panels smell s
 ```
 src/core/               pure domain logic: deck, stats, convergence, Room state machine, protocol, room codes
 src/host/engine.ts      runs a room in the host's browser (validation, personalised views, Jira import/write-back)
-src/net/peer.ts         WebRTC transport (PeerJS): host registration, guest connections, reconnects
+src/net/relay.ts        transport over the WebSocket relay: host and guest connections, heartbeats, reconnects
+relay/                  the relay (Vercel project): api/relay.js entry, src/relay.js routing, src/bus.js Redis/in-memory
 src/jira/               Jira REST client (browser), mock (demo/tests), helper client, comment formatter
 src/app, src/components Next.js UI (static export)
 src/scenes/             the living background: organism (GPU simulation), runtime (DOM, cursor, events), moods
@@ -123,6 +144,8 @@ so change code and docs together.
 
 * The room lives in the host's browser: it is reachable only while the host has it open, and it is lost if the host
   clears the site's data. The host role cannot be handed over.
-* WebRTC uses public STUN only (no TURN relay); very restrictive networks can prevent guests from connecting.
-* Signaling uses the free public PeerJS server (no uptime guarantee). It sees connection metadata (IP addresses), not room data.
+* All messages pass through the relay (encrypted in transit with TLS); whoever runs the relay could read them.
+  Hidden votes still only go from a guest to the host.
+* Vercel recycles WebSocket connections at `maxDuration` (300 s); everyone reconnects automatically, which shows as a
+  brief "reconnecting" for the host and "host offline" for guests.
 * Jira access requires the helper on the host's machine; it allows only the configured site(s) and the endpoints the app needs.

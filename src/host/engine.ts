@@ -4,7 +4,7 @@ import { formatEstimateComment } from "@/jira/comment";
 import { JiraError } from "@/jira/client";
 import type { JiraGateway } from "@/jira/types";
 
-/** One participant's connection to the host (a WebRTC data channel, or the host's own tab). */
+/** One participant's connection to the host (a guest via the relay, or the host's own tab). */
 export interface PeerLink {
   /** Handles one raw message from the participant. Resolves once it is fully processed (incl. Jira calls). */
   receive(raw: string): Promise<void>;
@@ -22,7 +22,7 @@ export interface HostEngineOptions {
 interface Conn { send: (m: ServerMessage) => void; pid: string | null }
 
 /**
- * Runs a room in the host's browser. Guests talk to it over WebRTC with the same protocol the old
+ * Runs a room in the host's browser. Guests talk to it through the relay with the same protocol the old
  * WebSocket server used; every participant gets their own view, so hidden votes never leave the host.
  * Jira is reached only from here (the host's browser).
  */
