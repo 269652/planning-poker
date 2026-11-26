@@ -29,12 +29,14 @@ describe("documentation is aligned with the code", () => {
     for (const c of [...ERROR_CODES, "BAD_MESSAGE", "JIRA", "INTERNAL"]) expect(doc, `error ${c}`).toContain(`\`${c}\``);
   });
 
-  it("PROTOCOL.md documents every HTTP route", () => {
+  it("PROTOCOL.md documents the WebRTC transport and how a room code finds its host", () => {
     const doc = read("docs/PROTOCOL.md");
-    for (const r of [
-      "POST /api/rooms", "GET /api/rooms/:id", "GET /api/rooms/:id/export", "GET /api/jira/status",
-      "GET /api/rooms/:id/jira/boards", "/jira/boards/:boardId/sprints", "/jira/boards/:boardId/issues",
-    ]) expect(doc, r).toContain(r);
+    for (const w of ["WebRTC", "PeerJS", "ppoker-", "data channel", "/room/#"]) expect(doc, w).toContain(w);
+  });
+
+  it("JIRA.md documents the local Jira helper (credentials in .env, origins, allowed endpoints)", () => {
+    const doc = read("docs/JIRA.md");
+    for (const w of ["CORS", "jira-helper.mjs", "--origin", "JIRA_PERSONAL_TOKEN", "/status", "127.0.0.1", "never"]) expect(doc, w).toContain(w);
   });
 
   it("every env var in .env.example is documented in docs/JIRA.md or the README", () => {
@@ -56,7 +58,7 @@ describe("documentation is aligned with the code", () => {
     const readme = read("README.md");
     for (const f of ["docs/MECHANICS.md", "docs/PROTOCOL.md", "docs/JIRA.md"]) expect(readme, f).toContain(f);
     const scripts = Object.keys(JSON.parse(read("package.json")).scripts) as string[];
-    for (const s of ["dev", "build", "start", "demo", "test"]) {
+    for (const s of ["dev", "build", "preview", "test"]) {
       expect(scripts).toContain(s);
       expect(readme, `npm run ${s}`).toMatch(new RegExp(`npm (run )?${s}\\b`));
     }

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { cardLabel, trendLabel, joinUrlFor, writebackLabel, wsUrlFor } from "@/ui/format";
+import { cardLabel, trendLabel, joinUrlFor, writebackLabel } from "@/ui/format";
+import { newRoomId, parseRoomCode, peerIdFor } from "@/core/roomId";
 
 describe("ui format helpers", () => {
   it("labels cards", () => {
@@ -26,9 +27,26 @@ describe("ui format helpers", () => {
     expect(writebackLabel({ status: "failed", error: "boom" })).toContain("boom");
   });
 
-  it("builds shareable room links and websocket urls", () => {
-    expect(joinUrlFor("https://poker.example", "ABCD2345")).toBe("https://poker.example/room/ABCD2345");
-    expect(wsUrlFor({ protocol: "http:", host: "localhost:3000" })).toBe("ws://localhost:3000/ws");
-    expect(wsUrlFor({ protocol: "https:", host: "p.example" })).toBe("wss://p.example/ws");
+  it("builds shareable room links (static hosting: the code travels in the #fragment)", () => {
+    expect(joinUrlFor("https://me.github.io/planning-poker", "ABCD2345")).toBe("https://me.github.io/planning-poker/room/#ABCD2345");
+    expect(joinUrlFor("http://localhost:3000/", "ABCD2345")).toBe("http://localhost:3000/room/#ABCD2345");
+  });
+});
+
+describe("room codes", () => {
+  it("generates 8-character codes without look-alike characters", () => {
+    for (let i = 0; i < 50; i++) expect(newRoomId()).toMatch(/^[A-HJKMNP-Z2-9]{8}$/);
+  });
+
+  it("derives the host's WebRTC peer id from the code", () => {
+    expect(peerIdFor("abcd2345")).toBe("ppoker-ABCD2345");
+  });
+
+  it("reads a code from user input or a pasted invite link", () => {
+    expect(parseRoomCode(" abcd2345 ")).toBe("ABCD2345");
+    expect(parseRoomCode("https://me.github.io/planning-poker/room/#ABCD2345")).toBe("ABCD2345");
+    expect(parseRoomCode("#abcd2345")).toBe("ABCD2345");
+    expect(parseRoomCode("ABCD")).toBeNull();
+    expect(parseRoomCode("ABCD234O")).toBeNull();
   });
 });

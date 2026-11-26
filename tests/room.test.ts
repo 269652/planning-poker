@@ -52,13 +52,17 @@ describe("Room: participants", () => {
     expect(codeOf(() => room.join({ name: "   " }))).toBe("INVALID");
   });
 
-  it("host can promote another participant to host", () => {
+  it("the host role stays with the room's owner (the browser that runs it)", () => {
     const room = makeRoom();
-    const a = room.join({ name: "A" });
-    const b = room.join({ name: "B" });
-    expect(codeOf(() => room.promote(b.participant.id, b.participant.id))).toBe("FORBIDDEN");
-    room.promote(a.participant.id, b.participant.id);
-    expect(room.view(a.participant.id).hostId).toBe(b.participant.id);
+    room.join({ name: "A" });
+    expect("promote" in room).toBe(false);
+  });
+
+  it("generates ids with the Web Crypto API (runs in browsers, no node:crypto)", () => {
+    const room = Room.create({ id: "ROOMWC", name: "x" });
+    const { participant, token } = room.join({ name: "A" });
+    expect(participant.id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(token).not.toBe(participant.id);
   });
 });
 
@@ -272,6 +276,11 @@ describe("Room: ticket and round lifecycle", () => {
     expect(room.view(host).tickets[0].writeback).toMatchObject({ status: "failed", error: "boom" });
   });
 
+  it("keeps the Jira issue type and status for display", () => {
+    const t = room.addTicket(host, { title: "x", key: "PROJ-8", source: "jira", issueType: "Bug", jiraStatus: "In Progress" });
+    expect(t).toMatchObject({ issueType: "Bug", status: "open", jiraStatus: "In Progress" });
+  });
+
   it("does not add the same Jira key twice", () => {
     room.addTicket(host, { title: "a", key: "PROJ-1", source: "jira" });
     expect(codeOf(() => room.addTicket(host, { title: "a", key: "PROJ-1", source: "jira" }))).toBe("DUPLICATE");
@@ -290,5 +299,177 @@ describe("Room: persistence", () => {
     expect(copy.view(b.participant.id)).toEqual(room.view(b.participant.id));
     const resumed = copy.join({ name: "B", token: b.token });
     expect(resumed.participant.id).toBe(b.participant.id);
+  });
+
+  it("restores rooms saved before boards existed (board defaults to null)", () => {
+    const room = makeRoom();
+    const a = room.join({ name: "A" });
+    const old = room.snapshot() as unknown as Record<string, unknown>;
+    delete old.board;
+    expect(Room.restore(old as never).view(a.participant.id).board).toBeNull();
+  });
+});
+
+describe("Room: Jira board", () => {
+  it("is bound to an optional board, visible in views and snapshots", () => {
+    const board = { id: 7, name: "Team Board", type: "kanban" };
+    const room = Room.create({ id: "ROOM02", name: "Refinement", board });
+    const a = room.join({ name: "A" }).participant.id;
+    expect(room.view(a).board).toEqual(board);
+    expect(room.board).toEqual(board);
+    expect(Room.restore(room.snapshot()).view(a).board).toEqual(board);
+    expect(makeRoom().view(makeRoom().join({ name: "x" }).participant.id).board).toBeNull();
+  });
+});
+
+describe("Room: estimating one ticket after another", () => {
+  let room: Room;
+  let host: string, bob: string;
+  beforeEach(() => {
+    room = makeRoom();
+    host = room.join({ name: "Host" }).participant.id;
+    bob = room.join({ name: "Bob" }).participant.id;
+  });
+  const estimate = (card: 3 | 5) => { room.vote(host, card); room.vote(bob, card); room.reveal(host); room.finalize(host); };
+
+  it("nextTicket moves to the next open ticket in list order and opens its first round", () => {
+    const [a, b, c] = ["A", "B", "C"].map((title) => room.addTicket(host, { title }));
+    room.selectTicket(host, a.id);
+    estimate(3);
+    room.nextTicket(host);
+    expect(room.view(host).currentTicketId).toBe(b.id);
+    expect(room.view(host).tickets[1].rounds).toHaveLength(1);
+    room.nextTicket(host); // skipping an unestimated ticket is allowed
+    expect(room.view(host).currentTicketId).toBe(c.id);
+  });
+
+  it("nextTicket skips estimated tickets and wraps around", () => {
+    const [a, b, c] = ["A", "B", "C"].map((title) => room.addTicket(host, { title }));
+    room.selectTicket(host, b.id); estimate(5);
+    room.selectTicket(host, c.id);
+    room.nextTicket(host);
+    expect(room.view(host).currentTicketId).toBe(a.id);
+  });
+
+  it("nextTicket with no selection starts at the first open ticket", () => {
+    const [a, b] = ["A", "B"].map((title) => room.addTicket(host, { title }));
+    room.selectTicket(host, a.id); estimate(3);
+    room.removeTicket(host, a.id);
+    room.nextTicket(host);
+    expect(room.view(host).currentTicketId).toBe(b.id);
+  });
+
+  it("nextTicket reports NO_TICKET when nothing else is open, and is host-only", () => {
+    const a = room.addTicket(host, { title: "A" });
+    expect(codeOf(() => room.nextTicket(bob))).toBe("FORBIDDEN");
+    room.selectTicket(host, a.id); estimate(3);
+    expect(codeOf(() => room.nextTicket(host))).toBe("NO_TICKET");
+    expect(room.view(host).currentTicketId).toBe(a.id);
+  });
+});
+
+describe("Room: card patterns (who picked the same card is visible, not which card)", () => {
+  let room: Room;
+  let host: string, bob: string, cara: string, obs: string;
+  beforeEach(() => {
+    room = makeRoom();
+    host = room.join({ name: "Host" }).participant.id;
+    bob = room.join({ name: "Bob" }).participant.id;
+    cara = room.join({ name: "Cara" }).participant.id;
+    obs = room.join({ name: "Olga", role: "observer" }).participant.id;
+    room.selectTicket(host, room.addTicket(host, { title: "T" }).id);
+  });
+  const patterns = (pid = obs) => room.view(pid).tickets[0].rounds.at(-1)!.patterns;
+
+  it("equal cards share a pattern id, different cards get different ones, before reveal", () => {
+    room.vote(host, 5); room.vote(bob, 5); room.vote(cara, 8);
+    const p = patterns();
+    expect(Object.keys(p).sort()).toEqual([bob, cara, host].sort());
+    expect(p[host]).toBe(p[bob]);
+    expect(p[cara]).not.toBe(p[host]);
+    expect(patterns(bob)).toEqual(p);
+  });
+
+  it("pattern ids carry no information about the card", () => {
+    room.vote(host, 5); room.vote(bob, 13);
+    // Ids come from the room's random id generator (UUIDs in production), not from the card.
+    for (const id of Object.values(patterns())) expect(id).toMatch(/^id\d+$/);
+    expect(Object.values(patterns())).not.toContain("5");
+    expect(Object.values(patterns())).not.toContain("13");
+    expect(JSON.stringify(room.view(obs).tickets[0].rounds[0].votes)).toBe("null");
+  });
+
+  it("every round gets new patterns, and changing a vote changes your pattern", () => {
+    room.vote(host, 5); room.vote(bob, 8);
+    const first = patterns()[host];
+    room.vote(bob, 5);
+    expect(patterns()[bob]).toBe(first);
+    room.reveal(host);
+    room.nextRound(host);
+    room.vote(host, 5);
+    expect(patterns()[host]).not.toBe(first);
+  });
+
+  it("rooms saved before patterns existed still show votes without patterns", () => {
+    room.vote(host, 5);
+    const state = JSON.parse(JSON.stringify(room.snapshot()));
+    delete state.tickets[0].rounds[0].patternIds;
+    const back = Room.restore(state);
+    expect(back.view(host).tickets[0].rounds[0].patterns).toEqual({});
+    back.vote(bob, 5);
+    const p = back.view(host).tickets[0].rounds[0].patterns;
+    expect(Object.keys(p).sort()).toEqual([bob, host].sort());
+    expect(p[bob]).toBe(p[host]);
+  });
+});
+
+describe("Room: raising a hand", () => {
+  it("anyone can raise and lower their hand; it is visible to all", () => {
+    const room = makeRoom();
+    const host = room.join({ name: "Host" }).participant.id;
+    const bob = room.join({ name: "Bob" }).participant.id;
+    room.raiseHand(bob, true);
+    expect(room.view(host).participants.find((p) => p.id === bob)!.handRaised).toBe(true);
+    room.raiseHand(bob, false);
+    expect(room.view(host).participants.find((p) => p.id === bob)!.handRaised).toBe(false);
+  });
+
+  it("hands are lowered when the team moves on to a new round or ticket", () => {
+    const room = makeRoom();
+    const host = room.join({ name: "Host" }).participant.id;
+    const bob = room.join({ name: "Bob" }).participant.id;
+    const [a, b] = ["A", "B"].map((title) => room.addTicket(host, { title }));
+    room.selectTicket(host, a.id);
+    room.raiseHand(bob, true);
+    room.vote(bob, 3); room.reveal(host); room.nextRound(host);
+    expect(room.view(host).participants[1].handRaised).toBe(false);
+    room.raiseHand(bob, true);
+    room.selectTicket(host, b.id);
+    expect(room.view(host).participants[1].handRaised).toBe(false);
+  });
+
+  it("unknown participants cannot raise a hand", () => {
+    expect(codeOf(() => makeRoom().raiseHand("nobody", true))).toBe("NOT_FOUND");
+  });
+});
+
+describe("Room: summary for the landing page", () => {
+  it("summarises progress, presence and role without exposing votes or tokens", () => {
+    const room = Room.create({ id: "ROOM03", name: "Planning", board: { id: 1, name: "B", type: "scrum" }, now: () => 5_000 });
+    const host = room.join({ name: "Host" }).participant.id;
+    const bob = room.join({ name: "Bob" }).participant.id;
+    const t1 = room.addTicket(host, { title: "One", key: "P-1", source: "jira" });
+    room.addTicket(host, { title: "Two" });
+    room.selectTicket(host, t1.id);
+    room.vote(bob, 5);
+    room.leave(bob);
+    const s = room.summary(bob);
+    expect(s).toEqual({
+      id: "ROOM03", name: "Planning", board: { id: 1, name: "B", type: "scrum" },
+      isHost: false, ticketCount: 2, estimatedCount: 0, online: 1, participantCount: 2,
+      current: { key: "P-1", title: "One" }, createdAt: 5_000, lastActivityAt: 5_000,
+    });
+    expect(room.summary(host).isHost).toBe(true);
+    expect(JSON.stringify(s)).not.toContain("token");
   });
 });

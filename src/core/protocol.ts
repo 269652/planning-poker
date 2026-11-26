@@ -9,8 +9,8 @@ export const MAX_IMPORT_KEYS = 200;
 const ISSUE_KEY = /^[A-Z][A-Z0-9_]*-\d+$/i;
 
 export const CLIENT_MESSAGE_TYPES = [
-  "join", "vote", "reveal", "nextRound", "finalize", "reopen", "selectTicket", "removeTicket",
-  "addTicket", "importJira", "retryWriteback", "setRule", "promote", "ping",
+  "join", "vote", "reveal", "nextRound", "nextTicket", "finalize", "reopen", "selectTicket", "removeTicket",
+  "addTicket", "importJira", "retryWriteback", "setRule", "raiseHand", "ping",
 ] as const;
 export const SERVER_MESSAGE_TYPES = ["welcome", "state", "error", "pong"] as const;
 
@@ -19,6 +19,7 @@ export type ClientMessage =
   | { type: "vote"; card: Card }
   | { type: "reveal" }
   | { type: "nextRound" }
+  | { type: "nextTicket" }
   | { type: "finalize"; value?: NumericCard }
   | { type: "reopen"; ticketId: string }
   | { type: "selectTicket"; ticketId: string }
@@ -27,7 +28,7 @@ export type ClientMessage =
   | { type: "importJira"; issueKeys: string[] }
   | { type: "retryWriteback"; ticketId: string }
   | { type: "setRule"; rule: AgreementRule }
-  | { type: "promote"; participantId: string }
+  | { type: "raiseHand"; raised: boolean }
   | { type: "ping" };
 
 export type ServerMessage =
@@ -59,7 +60,7 @@ export function parseClientMessage(raw: string): ClientMessage {
     case "vote":
       if (!isCard(m.card)) throw new ProtocolError("Invalid card");
       return { type: "vote", card: m.card };
-    case "reveal": case "nextRound": case "ping":
+    case "reveal": case "nextRound": case "nextTicket": case "ping":
       return { type: m.type };
     case "finalize":
       if (m.value !== undefined && !isNumericCard(m.value)) throw new ProtocolError("Final estimate must be a numeric card");
@@ -81,8 +82,9 @@ export function parseClientMessage(raw: string): ClientMessage {
     case "setRule":
       if (m.rule !== "unanimous" && m.rule !== "adjacent") throw new ProtocolError("Invalid rule");
       return { type: "setRule", rule: m.rule };
-    case "promote":
-      return { type: "promote", participantId: str(m, "participantId", 100) };
+    case "raiseHand":
+      if (typeof m.raised !== "boolean") throw new ProtocolError("raised must be true or false");
+      return { type: "raiseHand", raised: m.raised };
     default:
       throw new ProtocolError("Unknown message type");
   }

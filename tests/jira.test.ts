@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { JiraClient, JiraError } from "@/jira/client";
 import { formatEstimateComment } from "@/jira/comment";
-import { jiraFromEnv } from "@/jira/config";
 import { MockJira } from "@/jira/mock";
 import { Room } from "@/core/room";
 
@@ -175,6 +174,71 @@ describe("JiraClient", () => {
   });
 });
 
+describe("JiraClient: board search, kanban boards and issue search", () => {
+  const sp = () => fields();
+  const jqlOf = (c: Call) => new URL(c.url).searchParams.get("jql");
+
+  it("searches boards by name with a single small page", async () => {
+    const { fn, calls } = fakeFetch({ "GET /rest/agile/1.0/board": () => ({ values: [{ id: 3, name: "BMG Relaunch", type: "kanban" }], isLast: false }) });
+    const boards = await new JiraClient(cfg, fn).searchBoards("bmg");
+    expect(boards).toEqual([{ id: 3, name: "BMG Relaunch", type: "kanban" }]);
+    expect(calls).toHaveLength(1);
+    const q = new URL(calls[0].url).searchParams;
+    expect(q.get("name")).toBe("bmg");
+    expect(q.get("maxResults")).toBe("20");
+  });
+
+  it("searchBoards without a query returns the first page and omits the name filter", async () => {
+    const { fn, calls } = fakeFetch({ "GET /rest/agile/1.0/board": () => ({ values: [], isLast: true }) });
+    await new JiraClient(cfg, fn).searchBoards("  ");
+    expect(new URL(calls[0].url).searchParams.has("name")).toBe(false);
+  });
+
+  it("fetches a single board by id", async () => {
+    const { fn } = fakeFetch({ "GET /rest/agile/1.0/board/42": () => ({ id: 42, name: "Team", type: "scrum", self: "x" }) });
+    expect(await new JiraClient(cfg, fn).getBoard(42)).toEqual({ id: 42, name: "Team", type: "scrum" });
+  });
+
+  it("lists all open issues on a board (kanban boards have no backlog)", async () => {
+    const { fn, calls } = fakeFetch({
+      "GET /rest/api/2/field": sp,
+      "GET /rest/agile/1.0/board/5/issue": () => ({ issues: [issueJson("K-1")], total: 1 }),
+    });
+    const issues = await new JiraClient(cfg, fn).listIssues(5, { scope: "all" });
+    expect(issues.map((i) => i.key)).toEqual(["K-1"]);
+    expect(jqlOf(calls[1])).toBe("statusCategory != Done ORDER BY Rank ASC");
+  });
+
+  it("searches issue text on the board, sanitising the query so it cannot alter the JQL", async () => {
+    const { fn, calls } = fakeFetch({
+      "GET /rest/api/2/field": sp,
+      "GET /rest/agile/1.0/board/5/issue": () => ({ issues: [issueJson("K-2")], total: 1 }),
+    });
+    const issues = await new JiraClient(cfg, fn).listIssues(5, { query: 'login" OR project = (X)\\' });
+    expect(issues.map((i) => i.key)).toEqual(["K-2"]);
+    expect(jqlOf(calls[1])).toBe('statusCategory != Done AND text ~ "login OR project = X*" ORDER BY Rank ASC');
+    expect(new URL(calls[1].url).searchParams.get("maxResults")).toBe("50");
+  });
+
+  it("a query that looks like an issue key also finds that issue directly, first and without duplicates", async () => {
+    const { fn } = fakeFetch({
+      "GET /rest/api/2/field": sp,
+      "GET /rest/api/2/issue/K-9": () => issueJson("K-9"),
+      "GET /rest/agile/1.0/board/5/issue": () => ({ issues: [issueJson("K-3"), issueJson("K-9")], total: 2 }),
+    });
+    const issues = await new JiraClient(cfg, fn).listIssues(5, { query: " k-9 " });
+    expect(issues.map((i) => i.key)).toEqual(["K-9", "K-3"]);
+  });
+
+  it("an unknown key in the query is not an error", async () => {
+    const { fn } = fakeFetch({
+      "GET /rest/api/2/field": sp,
+      "GET /rest/agile/1.0/board/5/issue": () => ({ issues: [], total: 0 }),
+    });
+    expect(await new JiraClient(cfg, fn).listIssues(5, { query: "NOPE-1" })).toEqual([]);
+  });
+});
+
 describe("formatEstimateComment", () => {
   it("summarises estimate, resolution and every round without naming voters", () => {
     let n = 0;
@@ -197,20 +261,31 @@ describe("formatEstimateComment", () => {
   });
 });
 
-describe("jiraFromEnv", () => {
-  it("returns null when unconfigured", () => {
-    expect(jiraFromEnv({})).toBeNull();
+describe("JiraClient in the browser", () => {
+  it("routes calls through the CORS helper when configured, but links issues to Jira itself", async () => {
+    const urls: string[] = [];
+    const fn = (async (input: RequestInfo | URL) => {
+      urls.push(String(input));
+      return new Response(JSON.stringify({ key: "P-1", fields: { summary: "s" } }), { status: 200 });
+    }) as typeof fetch;
+    const c = new JiraClient({ ...cfg, storyPointsField: "customfield_1", proxyUrl: "http://127.0.0.1:8787/" }, fn);
+    const [issue] = await c.getIssues(["P-1"]);
+    expect(urls[0]).toBe("http://127.0.0.1:8787/rest/api/2/issue/P-1?fields=summary,description,status,issuetype,customfield_1");
+    expect(issue.url).toBe("https://acme.atlassian.net/browse/P-1");
   });
-  it("returns a mock when JIRA_MOCK=1", () => {
-    expect(jiraFromEnv({ JIRA_MOCK: "1" })).toBeInstanceOf(MockJira);
+
+  it("encodes basic auth without Node's Buffer (UTF-8 safe)", async () => {
+    const { fn, calls } = fakeFetch({ "GET /rest/agile/1.0/board": () => ({ values: [], isLast: true }) });
+    await new JiraClient({ ...cfg, email: "jürgen@acme.com" }, fn).listBoards();
+    expect(calls[0].headers.Authorization).toBe("Basic " + Buffer.from("jürgen@acme.com:tok", "utf8").toString("base64"));
   });
-  it("builds a client from env and requires email for basic auth", () => {
-    expect(jiraFromEnv({ JIRA_BASE_URL: "https://x.atlassian.net", JIRA_EMAIL: "a@b.c", JIRA_API_TOKEN: "t" })).toBeInstanceOf(JiraClient);
-    expect(() => jiraFromEnv({ JIRA_BASE_URL: "https://x.atlassian.net", JIRA_API_TOKEN: "t" })).toThrow(/JIRA_EMAIL/);
-    expect(jiraFromEnv({ JIRA_BASE_URL: "https://j.corp", JIRA_API_TOKEN: "pat", JIRA_AUTH: "bearer" })).toBeInstanceOf(JiraClient);
-  });
-  it("rejects a half-configured environment", () => {
-    expect(() => jiraFromEnv({ JIRA_BASE_URL: "https://x.atlassian.net" })).toThrow(/JIRA_API_TOKEN/);
+
+  it("explains a CORS/network block instead of a bare 'Failed to fetch'", async () => {
+    const fn = (async () => { throw new TypeError("Failed to fetch"); }) as typeof fetch;
+    const err = await new JiraClient(cfg, fn).listBoards().catch((e) => e);
+    expect(err).toBeInstanceOf(JiraError);
+    expect(err.message).toMatch(/Jira helper/);
+    expect(err.status).toBe(0);
   });
 });
 
@@ -224,6 +299,19 @@ describe("MockJira", () => {
     await j.writeEstimate(issues[0].key, 5, "c");
     expect((await j.getIssues([issues[0].key]))[0].estimate).toBe(5);
     expect(j.comments[issues[0].key]).toEqual(["c"]);
+  });
+  it("has a scrum and a kanban board, searchable by name", async () => {
+    const j = new MockJira();
+    expect((await j.searchBoards("")).map((b) => b.type)).toEqual(["scrum", "kanban"]);
+    expect(await j.searchBoards("kanban")).toEqual([{ id: 2, name: "Demo Kanban Board", type: "kanban" }]);
+    expect(await j.getBoard(1)).toMatchObject({ name: "Demo Scrum Board" });
+    await expect(j.getBoard(99)).rejects.toMatchObject({ status: 404 });
+  });
+  it("searches issues by key or summary", async () => {
+    const j = new MockJira();
+    expect((await j.listIssues(1, { query: "csv" })).map((i) => i.key)).toEqual(["DEMO-102"]);
+    expect((await j.listIssues(2, { query: "demo-105" })).map((i) => i.key)).toEqual(["DEMO-105"]);
+    expect(await j.listIssues(2, { scope: "all" })).toHaveLength(6);
   });
   it("can be told to fail writes", async () => {
     const j = new MockJira();

@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+// Web Crypto: available in browsers (where rooms run now) and in Node ≥ 19.
+const randomUUID = (): string => globalThis.crypto.randomUUID();
 import { type Card, type NumericCard, isCard, isNumericCard } from "./deck";
 import { type AgreementRule, type VoteStats, analyzeVotes } from "./stats";
 import { type Convergence, analyzeConvergence } from "./convergence";
@@ -34,12 +35,19 @@ export interface Participant {
   name: string;
   role: Role;
   connected: boolean;
+  /** Wants to say something before the team moves on (lowered on a new round/ticket). */
+  handRaised?: boolean;
 }
 
 export interface Round {
   number: number;
   status: "voting" | "revealed";
   votes: Record<string, Card>;
+  /**
+   * Card → random pattern id, created when the card is first played in this round. Lets everyone
+   * see who picked the same card before the reveal without learning which card it is.
+   */
+  patternIds?: Record<string, string>;
   startedAt: number;
   revealedAt?: number;
   /** Rule in force when the round was revealed (history is never rewritten). */
@@ -54,6 +62,9 @@ export interface Ticket {
   description?: string;
   url?: string;
   source: "manual" | "jira";
+  /** Jira issue type and workflow status at import time (display only). */
+  issueType?: string;
+  jiraStatus?: string;
   /** The estimate currently stored in Jira when the ticket was imported. */
   currentEstimate: number | null;
   status: TicketStatus;
@@ -64,9 +75,14 @@ export interface Ticket {
   writeback: Writeback;
 }
 
+/** The Jira board a room is bound to ("one session per project"). */
+export interface RoomBoard { id: number; name: string; type: string }
+
 export interface RoomState {
   id: string;
   name: string;
+  /** Optional: rooms saved before boards existed have no such field. */
+  board?: RoomBoard | null;
   rule: AgreementRule;
   createdAt: number;
   hostId: string | null;
@@ -81,6 +97,8 @@ export interface NewTicket {
   description?: string;
   url?: string;
   source?: "manual" | "jira";
+  issueType?: string;
+  jiraStatus?: string;
   currentEstimate?: number | null;
 }
 
@@ -94,6 +112,7 @@ export interface ParticipantView {
   isHost: boolean;
   /** Has voted in the current round of the current ticket. */
   hasVoted: boolean;
+  handRaised: boolean;
 }
 
 export interface RoundView {
@@ -104,6 +123,8 @@ export interface RoundView {
   /** Participant id -> card. Only present once revealed. */
   votes: Record<string, Card> | null;
   myVote: Card | null;
+  /** Participant id → pattern id of their card (equal cards ⇒ equal ids; the card stays hidden). */
+  patterns: Record<string, string>;
   stats: VoteStats | null;
   rule: AgreementRule | null;
   startedAt: number;
@@ -118,6 +139,7 @@ export interface TicketView extends Omit<Ticket, "rounds"> {
 export interface RoomView {
   id: string;
   name: string;
+  board: RoomBoard | null;
   rule: AgreementRule;
   you: string;
   hostId: string | null;
@@ -126,11 +148,27 @@ export interface RoomView {
   tickets: TicketView[];
 }
 
+/** What the landing page shows about a room the viewer belongs to. */
+export interface RoomSummary {
+  id: string;
+  name: string;
+  board: RoomBoard | null;
+  isHost: boolean;
+  ticketCount: number;
+  estimatedCount: number;
+  online: number;
+  participantCount: number;
+  current: { key: string | null; title: string } | null;
+  createdAt: number;
+  lastActivityAt: number;
+}
+
 // ---- Room -------------------------------------------------------------------
 
 export interface RoomOptions {
   id: string;
   name: string;
+  board?: RoomBoard | null;
   rule?: AgreementRule;
   now?: () => number;
   newId?: () => string;
@@ -149,7 +187,7 @@ export class Room {
     if (!name) throw new RoomError("INVALID", "Room name must not be empty");
     return new Room(
       {
-        id: opts.id, name, rule: opts.rule ?? "unanimous", createdAt: now(),
+        id: opts.id, name, board: opts.board ? { ...opts.board } : null, rule: opts.rule ?? "unanimous", createdAt: now(),
         hostId: null, currentTicketId: null, participants: [], tickets: [],
       },
       now,
@@ -168,6 +206,7 @@ export class Room {
   get id(): string { return this.state.id; }
   get name(): string { return this.state.name; }
   get createdAt(): number { return this.state.createdAt; }
+  get board(): RoomBoard | null { return this.state.board ? { ...this.state.board } : null; }
 
   /** Resolves a secret participant token to its participant id, or null. */
   authenticate(token: string | undefined): string | null {
@@ -215,12 +254,6 @@ export class Room {
     if (p) p.connected = false;
   }
 
-  promote(actor: string, targetId: string): void {
-    this.requireHost(actor);
-    if (!this.state.participants.some((p) => p.id === targetId)) throw new RoomError("NOT_FOUND", "Unknown participant");
-    this.state.hostId = targetId;
-  }
-
   setRule(actor: string, rule: AgreementRule): void {
     this.requireHost(actor);
     if (rule !== "unanimous" && rule !== "adjacent") throw new RoomError("INVALID", "Unknown agreement rule");
@@ -239,6 +272,8 @@ export class Room {
     const ticket: Ticket = {
       id: this.newId(), key: input.key, title, description: input.description, url: input.url,
       source: input.source ?? "manual", currentEstimate: input.currentEstimate ?? null,
+      ...(input.issueType ? { issueType: input.issueType } : {}),
+      ...(input.jiraStatus ? { jiraStatus: input.jiraStatus } : {}),
       status: "open", estimate: null, resolution: null, rounds: [], writeback: { status: "none" },
     };
     this.state.tickets.push(ticket);
@@ -255,8 +290,25 @@ export class Room {
   selectTicket(actor: string, ticketId: string): void {
     this.requireHost(actor);
     const t = this.ticket(ticketId);
+    if (this.state.currentTicketId !== t.id) this.lowerHands();
     this.state.currentTicketId = t.id;
     if (t.rounds.length === 0) this.startRound(t);
+  }
+
+  /**
+   * Moves to the next open ticket after the current one in list order (wrapping around), so a
+   * session can work through its queue one ticket after another. Skipping an open ticket is allowed.
+   */
+  nextTicket(actor: string): void {
+    this.requireHost(actor);
+    const list = this.state.tickets;
+    const at = list.findIndex((t) => t.id === this.state.currentTicketId);
+    const order = at < 0 ? list : [...list.slice(at + 1), ...list.slice(0, at)];
+    const next = order.find((t) => t.status === "open");
+    if (!next) throw new RoomError("NO_TICKET", "No other open ticket — add or import more, or re-estimate one");
+    this.lowerHands();
+    this.state.currentTicketId = next.id;
+    if (next.rounds.length === 0) this.startRound(next);
   }
 
   reopen(actor: string, ticketId: string): void {
@@ -284,6 +336,12 @@ export class Room {
     const round = this.currentRound();
     if (round.status !== "voting") throw new RoomError("BAD_PHASE", "Votes are revealed; start the next round first");
     round.votes[actor] = card;
+    round.patternIds ??= {};
+    round.patternIds[String(card)] ??= this.newId();
+  }
+
+  raiseHand(actor: string, raised: boolean): void {
+    this.participant(actor).handRaised = raised;
   }
 
   reveal(actor: string): void {
@@ -338,12 +396,29 @@ export class Room {
     const current = s.tickets.find((t) => t.id === s.currentTicketId);
     const currentRound = current ? this.lastRound(current) : undefined;
     return {
-      id: s.id, name: s.name, rule: s.rule, you: forId, hostId: s.hostId, currentTicketId: s.currentTicketId,
+      id: s.id, name: s.name, board: s.board ?? null, rule: s.rule, you: forId, hostId: s.hostId, currentTicketId: s.currentTicketId,
       participants: s.participants.map((p) => ({
         id: p.id, name: p.name, role: p.role, connected: p.connected, isHost: p.id === s.hostId,
-        hasVoted: !!currentRound && p.id in currentRound.votes,
+        hasVoted: !!currentRound && p.id in currentRound.votes, handRaised: !!p.handRaised,
       })),
       tickets: s.tickets.map((t) => this.ticketView(t, forId)),
+    };
+  }
+
+  summary(forId: string): RoomSummary {
+    const s = this.state;
+    const current = s.tickets.find((t) => t.id === s.currentTicketId);
+    const times = [s.createdAt];
+    for (const t of s.tickets) {
+      if (t.estimatedAt) times.push(t.estimatedAt);
+      for (const r of t.rounds) times.push(r.startedAt, r.revealedAt ?? 0);
+    }
+    return {
+      id: s.id, name: s.name, board: s.board ?? null, isHost: s.hostId === forId,
+      ticketCount: s.tickets.length, estimatedCount: s.tickets.filter((t) => t.status === "estimated").length,
+      online: s.participants.filter((p) => p.connected).length, participantCount: s.participants.length,
+      current: current ? { key: current.key ?? null, title: current.title } : null,
+      createdAt: s.createdAt, lastActivityAt: Math.max(...times),
     };
   }
 
@@ -353,10 +428,16 @@ export class Room {
       ...t,
       rounds: t.rounds.map((r) => {
         const revealed = r.status === "revealed";
+        const patterns: Record<string, string> = {};
+        for (const [pid, card] of Object.entries(r.votes)) {
+          const id = r.patternIds?.[String(card)];
+          if (id) patterns[pid] = id;
+        }
         return {
           number: r.number, status: r.status, voted: Object.keys(r.votes),
           votes: revealed ? { ...r.votes } : null,
           myVote: r.votes[forId] ?? null,
+          patterns,
           stats: revealed ? r.stats ?? null : null,
           rule: r.rule ?? null, startedAt: r.startedAt, revealedAt: r.revealedAt ?? null,
         };
@@ -402,6 +483,11 @@ export class Room {
   }
 
   private startRound(t: Ticket): void {
-    t.rounds.push({ number: t.rounds.length + 1, status: "voting", votes: {}, startedAt: this.now() });
+    t.rounds.push({ number: t.rounds.length + 1, status: "voting", votes: {}, patternIds: {}, startedAt: this.now() });
+    this.lowerHands();
+  }
+
+  private lowerHands(): void {
+    for (const p of this.state.participants) p.handRaised = false;
   }
 }

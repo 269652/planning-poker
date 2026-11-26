@@ -1,5 +1,10 @@
 import { JiraError } from "./client";
-import type { JiraBoard, JiraGateway, JiraIssue, JiraSprint } from "./types";
+import type { JiraBoard, JiraGateway, JiraIssue, JiraSprint, ListIssuesOptions } from "./types";
+
+const BOARDS: JiraBoard[] = [
+  { id: 1, name: "Demo Scrum Board", type: "scrum" },
+  { id: 2, name: "Demo Kanban Board", type: "kanban" },
+];
 
 const DEMO: Omit<JiraIssue, "url" | "status" | "issueType">[] = [
   { key: "DEMO-101", summary: "User can reset their password via email", description: "As a user I want to reset my password so that I can regain access.\n\nAC: email with expiring link; old sessions invalidated.", estimate: null },
@@ -20,15 +25,29 @@ export class MockJira implements JiraGateway {
   );
 
   async listBoards(): Promise<JiraBoard[]> {
-    return [{ id: 1, name: "Demo Scrum Board", type: "scrum" }];
+    return BOARDS.map((b) => ({ ...b }));
   }
 
-  async listSprints(): Promise<JiraSprint[]> {
+  async searchBoards(query: string): Promise<JiraBoard[]> {
+    const q = query.trim().toLowerCase();
+    return BOARDS.filter((b) => b.name.toLowerCase().includes(q)).map((b) => ({ ...b }));
+  }
+
+  async getBoard(id: number): Promise<JiraBoard> {
+    const b = BOARDS.find((x) => x.id === id);
+    if (!b) throw new JiraError(`Board ${id} not found`, 404);
+    return { ...b };
+  }
+
+  async listSprints(boardId: number): Promise<JiraSprint[]> {
+    if ((await this.getBoard(boardId)).type !== "scrum") throw new JiraError("The board does not support sprints", 400);
     return [{ id: 10, name: "Sprint 10", state: "active" }, { id: 11, name: "Sprint 11", state: "future" }];
   }
 
-  async listIssues(_boardId: number, opts: { sprintId?: number } = {}): Promise<JiraIssue[]> {
+  async listIssues(_boardId: number, opts: ListIssuesOptions = {}): Promise<JiraIssue[]> {
     const all = [...this.issues.values()];
+    const q = opts.query?.trim().toLowerCase();
+    if (q) return all.filter((i) => i.key.toLowerCase() === q || i.summary.toLowerCase().includes(q));
     if (opts.sprintId === 10) return all.slice(0, 3);
     if (opts.sprintId === 11) return all.slice(3, 5);
     return all;

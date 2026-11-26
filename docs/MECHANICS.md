@@ -18,14 +18,16 @@ Both `?` and `coffee` are never part of numeric statistics, and **block agreemen
 
 ## Roles
 
-* **Host** – the first participant to join. Controls everything: add/import/remove/select tickets, reveal,
-  next round, finalize, reopen, change the rule, retry write-back, promote another host. The host can hand over via *make host*.
+* **Host** – the person who created the room. The room *runs in the host's browser tab* (see [PROTOCOL.md](PROTOCOL.md)),
+  and only the host's browser talks to Jira (through the local Jira helper, see [JIRA.md](JIRA.md)).
+  Controls everything: add/import/remove/select tickets, reveal, next round, finalize, reopen, change the rule, retry write-back.
 * **Voter** – can vote.
 * **Observer** – sees everything, cannot vote.
 
-Participants are identified by a secret token stored in the browser, so reloading or reconnecting
+Participants are identified by a secret token stored in their browser, so reloading or reconnecting
 restores identity (and a vote already cast in the open round).
-There is no automatic host takeover: if the host goes offline, the room waits for them to return (same browser), unless they promoted someone beforehand.
+The host role cannot be handed over: the room's state lives in the host's browser. While the host's tab is closed the room
+is offline; guests wait and reconnect automatically when the host reopens it.
 
 ## Round lifecycle
 
@@ -42,6 +44,18 @@ select ticket ──► round N: voting ──reveal──► round N: revealed 
 * `nextRound` is only possible after reveal and appends a new round; earlier rounds are never modified.
 * `finalize` is only possible on a revealed round (see *Finalizing*).
 * `reopen` clears the estimate and the write-back state of a ticket and starts a new round. All earlier rounds remain in the history.
+
+### The ticket queue
+
+The ticket list is the session's queue, in the order tickets were added. The UI shows it as *Now estimating* (the current
+ticket), *Up next* (open tickets in the order `nextTicket` visits them: after the current one, wrapping around) and
+*Estimated*.
+
+* `nextTicket` selects the next **open** ticket after the current one and opens its round 1 if it has none. It may be used
+  before the current ticket is finished ("skip"); the skipped ticket stays open with its rounds. With no other open ticket
+  it fails with `NO_TICKET`.
+* Importing from Jira into a session without a current ticket selects the first imported ticket.
+* The host can still pick any ticket directly (`selectTicket`).
 
 ### What is recorded per round
 
@@ -112,17 +126,27 @@ Also provided: all per-round `scores` and `spreads`, the last `delta`, and `roun
 * **with a value** – must be a numeric card (never `?`/`coffee`). The facilitator's decision; resolution is
   `override`, unless the value happens to equal the agreed estimate (then `agreement`).
 
-Afterwards the ticket is `estimated`. For Jira tickets the server starts the write-back
-(see [JIRA.md](JIRA.md)); the estimate itself is kept even if Jira is unreachable.
+Afterwards the ticket is `estimated`. For Jira tickets the host's browser starts the write-back
+(see [JIRA.md](JIRA.md)); the estimate itself is kept even if Jira or the helper is unreachable. Everyone gets a toast
+when the write-back succeeds or fails.
 
 ## Privacy of votes
 
-The server builds a **personalised view** for each connection. Until reveal, a round exposes only *who* has voted
-(`voted`) and the viewer's own card (`myVote`); `votes` and `stats` are `null`. Participant tokens are never part of a view.
-The Jira comment lists the vote distribution per round **without names**.
+The host's browser builds a **personalised view** for each participant. Until reveal, a round exposes only *who* has voted
+(`voted`) and the viewer's own card (`myVote`); `votes` and `stats` are `null`. Hidden votes therefore never leave the
+host's browser. Participant tokens are never part of a view. The Jira comment lists the vote distribution per round **without names**.
+
+**Card backs.** On purpose, the table shows *who picked the same card* before the reveal: when a card value is first played
+in a round, the host gives it a fresh **random** pattern id, and every vote shows the procedural back drawn from its id
+(`patterns` in the view). Equal cards ⇒ equal backs; the id carries no information about the value, and every round gets new ids.
+You know your own card, so you can tell who agrees with you — nobody can tell which value another group chose.
+
+**Raised hands.** Anyone can raise or lower their hand (`raiseHand`) to ask to speak before the team moves on; it shows
+next to their name and at their seat. Hands are lowered automatically when a new round starts or another ticket is selected.
 
 ## Persistence
 
-With `DATA_DIR` (default `./data`) rooms are saved to `rooms.json` (debounced, atomic write, file mode 0600 because it contains participant tokens)
-and restored at start-up with every participant marked offline.
-`GET /api/rooms/:id/export` (host only) returns the complete history without tokens.
+A hosted room is saved in the host's browser (`localStorage`, debounced, and on page hide) and restored with every
+participant marked offline when the host reopens it. Clearing the browser's site data deletes the room — it exists nowhere else.
+Guests store only their reconnect token and a short summary for the start page.
+On the start page *delete* removes a hosted room for good; *forget* removes a joined room from the list.

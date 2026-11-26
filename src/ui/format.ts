@@ -29,10 +29,16 @@ export function writebackLabel(wb: Writeback): string | null {
   }
 }
 
-export function joinUrlFor(origin: string, roomId: string): string {
-  return `${origin}/room/${roomId}`;
+export function relativeTime(at: number, now = Date.now()): string {
+  const s = Math.max(0, (now - at) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86_400) return `${Math.floor(s / 3600)} h ago`;
+  const d = Math.floor(s / 86_400);
+  return d === 1 ? "yesterday" : `${d} days ago`;
 }
 
-export function wsUrlFor(loc: { protocol: string; host: string }): string {
-  return `${loc.protocol === "https:" ? "wss:" : "ws:"}//${loc.host}/ws`;
+/** `siteUrl` = origin + base path. The code is in the #fragment, so a static host serves one page for all rooms. */
+export function joinUrlFor(siteUrl: string, roomId: string): string {
+  return `${siteUrl.replace(/\/+$/, "")}/room/#${roomId}`;
 }
