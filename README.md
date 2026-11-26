@@ -39,8 +39,9 @@ npm run build              # static export into ./out (set NEXT_PUBLIC_BASE_PATH
 npm run preview            # serves ./out like GitHub Pages would, on http://localhost:4173
 ```
 
-[`.github/workflows/pages.yml`](.github/workflows/pages.yml) tests, builds and deploys on every push to `main` or the
-current default branch (or manually via *Run workflow*). One-time setup: repository *Settings → Pages → Source: GitHub Actions*.
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml) tests, builds and publishes the site to the `gh-pages`
+branch on every push to `main` or the current default branch (or manually via *Run workflow*).
+One-time setup: repository *Settings → Pages → Source: Deploy from a branch → `gh-pages`, `/ (root)`*.
 
 ## How a session works
 
