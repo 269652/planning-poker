@@ -25,7 +25,6 @@ export function startLivingBackground(canvas: HTMLCanvasElement, opts: { reduced
     preserveDrawingBuffer: !!opts.debug,
   });
   renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
   const organism = new Organism(renderer);
   const calm = opts.reducedMotion;
   const s = new Interaction(calm ? 0.55 : 1);
@@ -81,6 +80,10 @@ export function startLivingBackground(canvas: HTMLCanvasElement, opts: { reduced
 
   const resize = () => {
     width = window.innerWidth; height = window.innerHeight;
+    // The background is soft by design: on large (4K) screens render fewer pixels and let the
+    // browser upscale, keeping the per-pixel shader work within ~2.5 million pixels.
+    const budget = Math.sqrt(2_500_000 / Math.max(1, width * height));
+    renderer.setPixelRatio(Math.max(0.5, Math.min(window.devicePixelRatio || 1, 1.25, budget)));
     renderer.setSize(width, height, false);
     s.resize(width, height);
     organism.resize(width, height);

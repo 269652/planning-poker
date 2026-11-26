@@ -79,7 +79,10 @@ function TicketMention({ issueKey, ctx }: { issueKey: string; ctx: MentionContex
     const r = anchor.current?.getBoundingClientRect();
     if (!r) return;
     const above = r.bottom + 190 > window.innerHeight;
-    setPos({ x: Math.min(Math.max(8, r.left), window.innerWidth - 328), y: above ? r.top - 6 : r.bottom + 6, above });
+    // The card is 21rem wide (scales with the root size), at most the screen width minus a margin.
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const w = Math.min(21 * rem, window.innerWidth - 16);
+    setPos({ x: Math.max(8, Math.min(r.left, window.innerWidth - w - 8)), y: above ? r.top - 6 : r.bottom + 6, above });
   };
   const close = () => { clearTimeout(hide.current); hide.current = setTimeout(() => setPos(null), 150); };
   const props = {

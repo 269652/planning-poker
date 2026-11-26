@@ -125,7 +125,8 @@ function Message({ m, prev, mine, ctx, image, onZoom, you, names, react }: {
           <b>{mine ? "You" : m.name}</b> <span className="muted">{time(m.at)}</span>
         </div>
       )}
-      <div className="msg-body">
+      {/* Focusable on tap, so touch screens can open the reaction bar too. */}
+      <div className="msg-body" tabIndex={-1}>
         <div className="msg-text" title={grouped ? time(m.at) : undefined}>
           {m.imageId && (image
             ? <button type="button" className="msg-image" onClick={() => onZoom(image)} aria-label="Open image"><img src={image} alt={`Image from ${m.name}`} /></button>

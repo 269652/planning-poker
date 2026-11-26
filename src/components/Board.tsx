@@ -14,7 +14,7 @@ import { flashTitle, playChime } from "@/ui/chime";
 import { sceneEventsFor } from "@/scenes/events";
 import { firstTryUnanimous } from "@/ui/celebrate";
 import Fireworks from "./Fireworks";
-import BackgroundToggle from "./BackgroundToggle";
+import SettingsMenu from "./SettingsMenu";
 import ParticipantsPanel from "./ParticipantsPanel";
 import SideTabs from "./SideTabs";
 import RoundPanel from "./RoundPanel";
@@ -97,32 +97,26 @@ export default function Board({ view, status, error, dismissError, send, shareUr
   return (
     <div className="shell">
       <header className="topbar">
-        <div>
-          <Link href="/" className="small back">← All sessions</Link>
-          <h1>{view.name}</h1>
-          <span className="muted small">
-            {view.board && <>Board <b>{view.board.name}</b> · </>}
-            Rule: {view.rule === "unanimous" ? "unanimous" : "adjacent (±1 card)"} · you are {isHost ? "the host" : me?.role === "observer" ? "observing" : "a voter"}
-          </span>
-        </div>
+        <Link href="/" className="small back">← <span className="back-label">All sessions</span><span className="back-short">Sessions</span></Link>
+        <h1 title={view.name}>{view.name}</h1>
+        <span className="topbar-meta muted small">
+          {view.board && <><span className="nowrap">Board <b>{view.board.name}</b></span> · </>}
+          <span className="nowrap">Rule: {view.rule === "unanimous" ? "unanimous" : "adjacent (±1 card)"}</span> · <span className="nowrap">you are {isHost ? "the host" : me?.role === "observer" ? "observing" : "a voter"}</span>
+        </span>
         <div className="topbar-right">
-          <BackgroundToggle />
           {hosting
-            ? <span className={`chip ${PEER_LABEL[hostPeer].tone}`} title={PEER_LABEL[hostPeer].title}>{PEER_LABEL[hostPeer].text}</span>
+            ? <span className={`chip ${PEER_LABEL[hostPeer].tone}`} title={PEER_LABEL[hostPeer].title}><span className={`dot ${PEER_LABEL[hostPeer].tone === "good" ? "on" : ""}`} /> <span className="chip-text">{PEER_LABEL[hostPeer].text}</span></span>
             : <span className={`dot ${status === "open" ? "on" : "off"}`} title={status === "open" ? "Connected to the host" : "Not connected to the host"} />}
           <button
+            className="invite"
+            title={`Copy the invite link for room ${view.id}`}
             onClick={async () => {
               try { await navigator.clipboard.writeText(shareUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { window.prompt("Copy link", shareUrl); }
             }}
           >
-            {copied ? "Copied!" : `Invite · ${view.id}`}
+            {copied ? "Copied!" : <>Invite<span className="invite-code"> · {view.id}</span></>}
           </button>
-          {isHost && (
-            <select value={view.rule} onChange={(e) => send({ type: "setRule", rule: e.target.value as "unanimous" | "adjacent" })} aria-label="Agreement rule">
-              <option value="unanimous">Unanimous</option>
-              <option value="adjacent">Adjacent</option>
-            </select>
-          )}
+          <SettingsMenu rule={view.rule} isHost={isHost} onRule={(rule) => send({ type: "setRule", rule })} />
         </div>
       </header>
 
