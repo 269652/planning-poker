@@ -5,7 +5,7 @@ import { type Convergence, analyzeConvergence } from "./convergence";
 
 export type ErrorCode =
   | "FORBIDDEN" | "NO_TICKET" | "BAD_PHASE" | "INVALID" | "NO_VOTES"
-  | "NO_AGREEMENT" | "NOT_FOUND" | "DUPLICATE";
+  | "NO_AGREEMENT" | "NOT_FOUND" | "DUPLICATE" | "NOT_JOINED";
 
 export class RoomError extends Error {
   constructor(public readonly code: ErrorCode, message: string) {
@@ -165,6 +165,28 @@ export class Room {
 
   get id(): string { return this.state.id; }
   get name(): string { return this.state.name; }
+  get createdAt(): number { return this.state.createdAt; }
+
+  /** Resolves a secret participant token to its participant id, or null. */
+  authenticate(token: string | undefined): string | null {
+    if (!token) return null;
+    return this.state.participants.find((p) => p.token === token)?.id ?? null;
+  }
+
+  isHost(participantId: string): boolean {
+    return this.state.hostId === participantId;
+  }
+
+  getTicket(id: string): Ticket | undefined {
+    const t = this.state.tickets.find((x) => x.id === id);
+    return t ? structuredClone(t) : undefined;
+  }
+
+  /** Full history without secrets, for export. */
+  exportState(): Omit<RoomState, "participants"> & { participants: Omit<Participant, "token">[] } {
+    const { participants, ...rest } = structuredClone(this.state);
+    return { ...rest, participants: participants.map(({ token: _t, ...p }) => p) };
+  }
 
   // ---- participants
 
