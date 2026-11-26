@@ -78,7 +78,7 @@ describe("message type registry", () => {
       join: { roomId: "R", name: "n" }, vote: { card: 1 }, reveal: {}, nextRound: {}, nextTicket: {}, finalize: {},
       reopen: { ticketId: "t" }, selectTicket: { ticketId: "t" }, removeTicket: { ticketId: "t" },
       addTicket: { title: "t" }, importJira: { issueKeys: ["A-1"] }, retryWriteback: { ticketId: "t" },
-      setRule: { rule: "adjacent" }, raiseHand: { raised: true }, nudge: {}, ping: {},
+      setRule: { rule: "adjacent" }, raiseHand: { raised: true }, nudge: {}, chat: { text: "hi" }, react: { messageId: "m", emoji: "👍" }, ping: {},
     };
     expect(Object.keys(samples).sort()).toEqual([...CLIENT_MESSAGE_TYPES].sort());
     for (const type of CLIENT_MESSAGE_TYPES) expect(() => p({ type, ...(samples[type] as object) }), type).not.toThrow();

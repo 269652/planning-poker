@@ -53,6 +53,17 @@ describe("LocalStore (rooms live in the host's browser)", () => {
     expect(store.hostKey("ROOM2345")).not.toBe(key);
   });
 
+  it("only the newest tab hosting a room may save it (an older tab holds a stale copy)", () => {
+    const s = new MemoryStorage();
+    const tabA = new LocalStore(s), tabB = new LocalStore(s);
+    const a = tabA.claimHosting("ROOM2345");
+    expect(tabA.ownsHosting("ROOM2345", a)).toBe(true);
+    const b = tabB.claimHosting("ROOM2345");
+    expect(tabA.ownsHosting("ROOM2345", a)).toBe(false);
+    expect(tabB.ownsHosting("ROOM2345", b)).toBe(true);
+    expect(tabB.ownsHosting("OTHR2345", "anything")).toBe(true); // unclaimed
+  });
+
   it("survives corrupt entries and unavailable storage", () => {
     const s = new MemoryStorage();
     s.setItem("poker:host:BAD23456", "{not json");

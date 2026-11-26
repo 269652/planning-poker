@@ -64,6 +64,8 @@ Messages are JSON objects with a `type`. The first message must be `join`.
 | `retryWriteback` | `ticketId` | host | Retries a failed Jira write-back. |
 | `setRule` | `rule` (`unanimous`\|`adjacent`) | host | Changes the agreement rule for future reveals. |
 | `raiseHand` | `raised` (boolean) | anyone | Raises/lowers your hand (you want to say something). Hands are lowered automatically on a new round or ticket. |
+| `chat` | `text` (1–500 chars) | anyone | Posts a message to the room chat. The room keeps the latest 100 messages, and every `state` carries them in `room.chat` (`id`, `authorId`, `name`, `text`, `at`). At most 5 messages per sender every 5 s (`RATE_LIMITED`). Optional `image`: a PNG/JPEG/WebP/GIF data URL of at most 140,000 characters (the app shrinks pasted images to fit); then `text` may be empty. The message gets an `imageId`, and the image itself travels separately as `image`. Text is a small Markdown dialect (bold, italic, strike, code, links, quotes, lists); Jira keys like `BMG-123` render as ticket mentions. |
+| `react` | `messageId`, `emoji` | anyone | Toggles your reaction on a chat message (`👍 ❤️ 😆 😮 😢 🎉`); shown in `room.chat[].reactions` as emoji → participant ids. |
 | `nudge` | `participantId?` | anyone | Pings connected voters who haven't voted in the open round — everyone, or one participant (who must still have to vote). Each pinged person gets `nudged`; at most one ping per sender every 10 s (`RATE_LIMITED`). |
 | `ping` | – | anyone | Keep-alive; answered with `pong`. |
 
@@ -75,6 +77,7 @@ Messages are JSON objects with a `type`. The first message must be `join`.
 | `state` | `room` (a `RoomView`) | The full, **personalised** room state, sent to every participant after every change. |
 | `error` | `code`, `message` | The request failed; the connection stays open. |
 | `pong` | – | Reply to `ping`. |
+| `image` | `id`, `data` (data URL) | A chat image: sent to everyone when posted, and to each participant when they join. The host keeps the latest 30 in memory only (not saved with the room), so after the host reloads, older messages show "image no longer available". |
 | `nudged` | `from` (name) | Someone is waiting for your vote; the app plays a short chime and shows a toast. Sent only to the pinged people. |
 
 `RoomView` (see `src/core/room.ts`): `id`, `name`, `board` (`{ id, name, type }` or `null`), `rule`, `you`, `hostId`,
@@ -99,6 +102,6 @@ share an id (shown as the same procedural card back) while the id reveals nothin
 | `NO_VOTES` | Reveal with no votes. |
 | `NO_AGREEMENT` | `finalize` without value, but the round did not agree. |
 | `DUPLICATE` | Ticket key already on the board. |
-| `RATE_LIMITED` | Too many pings: one `nudge` per sender every 10 seconds. |
+| `RATE_LIMITED` | Too many pings (one `nudge` per sender every 10 seconds) or chat messages (5 per sender every 5 seconds). |
 | `JIRA` | The host has no Jira connection (helper not running) or the call to Jira failed (message includes the reason). |
 | `INTERNAL` | Unexpected error in the host's engine (logged in the host's browser console). |

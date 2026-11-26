@@ -11,6 +11,14 @@ export const ERROR_CODES = [
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
 const NUDGE_COOLDOWN_MS = 10_000;
+// Every room view carries the chat, and a view must fit the relay's 200 KiB message limit
+// alongside the tickets: 100 × 500 characters stays well under it.
+export const CHAT_MAX_LENGTH = 500;
+/** The room keeps the latest messages only. */
+export const CHAT_HISTORY = 100;
+/** At most CHAT_BURST messages per CHAT_WINDOW_MS per person. */
+const CHAT_BURST = 5;
+const CHAT_WINDOW_MS = 5_000;
 
 export class RoomError extends Error {
   constructor(public readonly code: ErrorCode, message: string) {
@@ -77,6 +85,22 @@ export interface Ticket {
   writeback: Writeback;
 }
 
+export interface ChatMessage {
+  id: string;
+  authorId: string;
+  /** The author's name when they wrote it (names can change). */
+  name: string;
+  text: string;
+  at: number;
+  /** An attached image, delivered separately (server message `image`); the host keeps the latest few. */
+  imageId?: string;
+  /** Emoji → ids of the participants who reacted with it (in reaction order). */
+  reactions?: Record<string, string[]>;
+}
+
+/** The reactions offered on chat messages (as in Teams). */
+export const REACTIONS = ["👍", "❤️", "😆", "😮", "😢", "🎉"] as const;
+
 /** The Jira board a room is bound to ("one session per project"). */
 export interface RoomBoard { id: number; name: string; type: string }
 
@@ -91,6 +115,8 @@ export interface RoomState {
   currentTicketId: string | null;
   participants: Participant[];
   tickets: Ticket[];
+  /** Optional: rooms saved before chat existed have no such field. */
+  chat?: ChatMessage[];
 }
 
 export interface NewTicket {
@@ -148,6 +174,8 @@ export interface RoomView {
   currentTicketId: string | null;
   participants: ParticipantView[];
   tickets: TicketView[];
+  /** Oldest first. */
+  chat: ChatMessage[];
 }
 
 /** What the landing page shows about a room the viewer belongs to. */
@@ -374,6 +402,38 @@ export class Room {
     return { from: me.name, targets };
   }
 
+  /** Recent chat send times per participant (in memory only), for the rate limit. */
+  private readonly chatTimes = new Map<string, number[]>();
+
+  /** Anyone in the room (voter or observer) may chat; a light rate limit keeps it from flooding. */
+  chat(actor: string, text: string, imageId?: string): ChatMessage {
+    const me = this.participant(actor);
+    const clean = text.replace(/\s+$/g, "").replace(/^\s+/g, "");
+    if (!clean && !imageId) throw new RoomError("INVALID", "Message must not be empty");
+    if (clean.length > CHAT_MAX_LENGTH) throw new RoomError("INVALID", `Messages can be at most ${CHAT_MAX_LENGTH} characters`);
+    const now = this.now();
+    const recent = (this.chatTimes.get(actor) ?? []).filter((t) => now - t < CHAT_WINDOW_MS);
+    if (recent.length >= CHAT_BURST) throw new RoomError("RATE_LIMITED", "Slow down a little — you can send again in a few seconds");
+    this.chatTimes.set(actor, [...recent, now]);
+    const msg: ChatMessage = { id: this.newId(), authorId: me.id, name: me.name, text: clean, at: now, ...(imageId ? { imageId } : {}) };
+    const chat = (this.state.chat ??= []);
+    chat.push(msg);
+    if (chat.length > CHAT_HISTORY) chat.splice(0, chat.length - CHAT_HISTORY);
+    return { ...msg };
+  }
+
+  /** Toggles the actor's reaction on a chat message. */
+  react(actor: string, messageId: string, emoji: string): void {
+    this.participant(actor);
+    if (!(REACTIONS as readonly string[]).includes(emoji)) throw new RoomError("INVALID", "Unknown reaction");
+    const msg = this.state.chat?.find((m) => m.id === messageId);
+    if (!msg) throw new RoomError("NOT_FOUND", "That message is no longer in the chat");
+    const reactions = (msg.reactions ??= {});
+    const who = reactions[emoji] ?? [];
+    reactions[emoji] = who.includes(actor) ? who.filter((p) => p !== actor) : [...who, actor];
+    if (reactions[emoji].length === 0) delete reactions[emoji];
+  }
+
   reveal(actor: string): void {
     this.requireHost(actor);
     const round = this.currentRound();
@@ -432,6 +492,7 @@ export class Room {
         hasVoted: !!currentRound && p.id in currentRound.votes, handRaised: !!p.handRaised,
       })),
       tickets: s.tickets.map((t) => this.ticketView(t, forId)),
+      chat: (s.chat ?? []).map((m) => structuredClone(m)),
     };
   }
 

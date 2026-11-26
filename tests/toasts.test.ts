@@ -8,7 +8,7 @@ const ticket = (over: Partial<TicketView>): TicketView => ({
   convergence: { trend: "none", score: null, history: [] } as unknown as TicketView["convergence"], ...over,
 });
 const view = (tickets: TicketView[]): RoomView => ({
-  id: "R", name: "R", rule: "unanimous", you: "p", hostId: "p", currentTicketId: null, board: null, participants: [], tickets,
+  id: "R", name: "R", rule: "unanimous", you: "p", hostId: "p", currentTicketId: null, board: null, participants: [], tickets, chat: [],
 });
 
 describe("writebackToasts", () => {

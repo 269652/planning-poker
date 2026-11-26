@@ -9,7 +9,7 @@ const t = (id: string, status: "open" | "estimated"): TicketView => ({
   resolution: null, rounds: [], writeback: { status: "none" }, convergence: {} as TicketView["convergence"],
 });
 const view = (tickets: TicketView[], currentTicketId: string | null): RoomView => ({
-  id: "R", name: "R", board: null, rule: "unanimous", you: "p", hostId: "p", currentTicketId, participants: [], tickets,
+  id: "R", name: "R", board: null, rule: "unanimous", you: "p", hostId: "p", currentTicketId, participants: [], tickets, chat: [],
 });
 
 describe("ticketQueue", () => {

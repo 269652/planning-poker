@@ -21,6 +21,9 @@ export interface HostEngineOptions {
 
 interface Conn { send: (m: ServerMessage) => void; pid: string | null }
 
+/** Chat images the host keeps (the oldest are dropped). */
+export const MAX_IMAGES = 30;
+
 /**
  * Runs a room in the host's browser. Guests talk to it through the relay with the same protocol the old
  * WebSocket server used; every participant gets their own view, so hidden votes never leave the host.
@@ -31,6 +34,11 @@ export class HostEngine {
   private jira: JiraGateway | null;
   private readonly onChange?: (room: Room) => void;
   private readonly conns = new Set<Conn>();
+  /**
+   * Chat images (id → data URL), newest last. Kept in memory on the host only — too big to persist
+   * with the room or to repeat in every state — so after the host reloads, older images are gone.
+   */
+  private readonly images = new Map<string, string>();
 
   constructor(opts: HostEngineOptions) {
     this.room = opts.room;
@@ -83,6 +91,7 @@ export class HostEngine {
         const { participant, token } = this.room.join({ name: msg.name, role: msg.role, token: msg.token });
         conn.pid = participant.id;
         this.safeSend(conn, { type: "welcome", token, you: participant.id });
+        for (const [id, data] of this.images) this.safeSend(conn, { type: "image", id, data });
         this.broadcast();
         return;
       }
@@ -112,6 +121,17 @@ export class HostEngine {
       case "addTicket": room.addTicket(pid, { title: msg.title, description: msg.description }); break;
       case "setRule": room.setRule(pid, msg.rule); break;
       case "raiseHand": room.raiseHand(pid, msg.raised); break;
+      case "react": room.react(pid, msg.messageId, msg.emoji); break;
+      case "chat": {
+        if (!msg.image) { room.chat(pid, msg.text); break; }
+        // The image travels once, on its own; the message (in every state) only refers to it.
+        const id = `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        room.chat(pid, msg.text, id);
+        this.images.set(id, msg.image);
+        while (this.images.size > MAX_IMAGES) this.images.delete(this.images.keys().next().value!);
+        for (const c of this.conns) if (c.pid) this.safeSend(c, { type: "image", id, data: msg.image });
+        break;
+      }
       case "nudge": {
         // Only the pinged people hear about it; nothing in the room changes.
         const { from, targets } = room.nudge(pid, msg.participantId);

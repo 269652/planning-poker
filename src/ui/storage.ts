@@ -20,6 +20,7 @@ const JOINED = "poker:joined:";
 const TOKEN = "poker:token:";
 const DEMO = "poker:demo:";
 const HOSTKEY = "poker:hostkey:";
+const OWNER = "poker:owner:";
 
 /**
  * Browser storage for rooms. A hosted room's full state lives here (the host's browser *is* the
@@ -62,6 +63,21 @@ export class LocalStore {
     } catch { return null; }
   }
 
+  /**
+   * Which tab may save a hosted room: the newest one to open it claims it, so an older tab (still
+   * holding a stale copy in memory) can't overwrite newer messages and votes when it closes.
+   */
+  claimHosting(roomId: string): string {
+    const claim = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    this.set(OWNER + roomId, claim);
+    return claim;
+  }
+  ownsHosting(roomId: string, claim: string): boolean {
+    const current = this.get(OWNER + roomId);
+    // Storage unavailable (or cleared): nobody else can claim it either.
+    return current === null || current === claim;
+  }
+
   rememberJoined(r: JoinedRoom): void { this.set(JOINED + r.id, JSON.stringify(r)); }
 
   /** Demo rooms (development only) use fake Jira data instead of the local helper. */
@@ -83,7 +99,7 @@ export class LocalStore {
   setName(name: string): void { this.set("poker:name", name.trim()); }
 
   forget(roomId: string): void {
-    this.del(HOST + roomId); this.del(JOINED + roomId); this.del(TOKEN + roomId); this.del(DEMO + roomId); this.del(HOSTKEY + roomId);
+    this.del(HOST + roomId); this.del(JOINED + roomId); this.del(TOKEN + roomId); this.del(DEMO + roomId); this.del(HOSTKEY + roomId); this.del(OWNER + roomId);
   }
 
   sessions(): SessionEntry[] {

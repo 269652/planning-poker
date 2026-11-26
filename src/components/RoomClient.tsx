@@ -115,6 +115,7 @@ export default function RoomClient() {
       jira={conn.jira}
       retryHelper={conn.retryHelper}
       nudged={conn.nudged}
+      images={conn.images}
     />
   );
 }

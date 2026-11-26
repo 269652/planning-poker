@@ -33,6 +33,8 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
   const [jira, setJira] = useState<JiraGateway | null>(null);
   /** The latest ping ("someone is waiting for your vote"); id changes with every ping. */
   const [nudged, setNudged] = useState<{ from: string; id: number } | null>(null);
+  /** Chat images received so far (id → data URL). */
+  const [images, setImages] = useState<Record<string, string>>({});
   const sendRef = useRef<(m: ClientMessage) => void>(() => {});
   const probeRef = useRef<() => void>(() => {});
   const errId = useRef(0);
@@ -56,6 +58,8 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
         }
       } else if (m.type === "nudged") {
         setNudged({ from: m.from, id: ++errId.current });
+      } else if (m.type === "image") {
+        setImages((imgs) => (imgs[m.id] === m.data ? imgs : { ...imgs, [m.id]: m.data }));
       } else if (m.type === "error") {
         if (m.code === "NOT_FOUND" && !gotView) { setFatal(m.message); return; }
         setError({ code: m.code, message: m.message, id: ++errId.current });
@@ -69,7 +73,12 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
       const demo = store.isDemo(roomId);
       const mock = demo ? new MockJira() : null;
       let saveTimer: ReturnType<typeof setTimeout> | undefined;
-      const save = () => { clearTimeout(saveTimer); saveTimer = undefined; store.saveHostedRoom(room.snapshot()); };
+      // Only the newest tab hosting this room saves it; an older tab would write back a stale copy.
+      const claim = store.claimHosting(roomId);
+      const save = () => {
+        clearTimeout(saveTimer); saveTimer = undefined;
+        if (store.ownsHosting(roomId, claim)) store.saveHostedRoom(room.snapshot());
+      };
       const engine = new HostEngine({
         room, jira: mock,
         onChange: () => { saveTimer ??= setTimeout(save, 300); },
@@ -127,5 +136,5 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
   const dismissError = useCallback(() => setError(null), []);
   const retryHelper = useCallback(() => { setHelper({ state: "checking" }); probeRef.current(); }, []);
 
-  return { view, status, error, fatal, token, send, dismissError, hostPeer, helper, jira, retryHelper, nudged };
+  return { view, status, error, fatal, token, send, dismissError, hostPeer, helper, jira, retryHelper, nudged, images };
 }

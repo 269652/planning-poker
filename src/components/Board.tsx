@@ -16,7 +16,7 @@ import { firstTryUnanimous } from "@/ui/celebrate";
 import Fireworks from "./Fireworks";
 import BackgroundToggle from "./BackgroundToggle";
 import ParticipantsPanel from "./ParticipantsPanel";
-import TicketList from "./TicketList";
+import SideTabs from "./SideTabs";
 import RoundPanel from "./RoundPanel";
 import VotePanel from "./VotePanel";
 import JiraImport from "./JiraImport";
@@ -34,6 +34,7 @@ interface Props {
   jira: JiraGateway | null;
   retryHelper: () => void;
   nudged: { from: string; id: number } | null;
+  images: Record<string, string>;
 }
 
 const PEER_LABEL: Record<HostState, { text: string; tone: string; title: string }> = {
@@ -43,7 +44,7 @@ const PEER_LABEL: Record<HostState, { text: string; tone: string; title: string 
   offline: { text: "Reconnecting…", tone: "bad", title: "Lost the connection to the relay; reconnecting. Guests re-join automatically." },
 };
 
-export default function Board({ view, status, error, dismissError, send, shareUrl, hosting, hostPeer, helper, jira, retryHelper, nudged }: Props) {
+export default function Board({ view, status, error, dismissError, send, shareUrl, hosting, hostPeer, helper, jira, retryHelper, nudged, images }: Props) {
   const [importing, setImporting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [toasts, setToasts] = useState<(Toast & { n: number })[]>([]);
@@ -142,7 +143,7 @@ export default function Board({ view, status, error, dismissError, send, shareUr
 
       <div className="layout">
         <aside className="col-left">
-          <TicketList view={view} queue={queue} isHost={isHost} send={send} onImport={onImport} />
+          <SideTabs view={view} queue={queue} isHost={isHost} send={send} onImport={onImport} images={images} />
         </aside>
         <main>
           <RoundPanel view={view} ticket={queue.current} next={queue.next} remaining={queue.upNext.length} isHost={isHost} send={send} />
