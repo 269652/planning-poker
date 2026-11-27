@@ -6,9 +6,9 @@ function local(): Storage | null {
   try { return window.localStorage; } catch { return null; }
 }
 
-/** Whether this browser shows the animated background. On unless switched off. */
+/** Whether this browser shows the animated background. Off unless switched on (in ⚙ Settings). */
 export function backgroundEnabled(storage: Storage | null = local()): boolean {
-  try { return storage?.getItem(KEY) !== "off"; } catch { return true; }
+  try { return storage?.getItem(KEY) === "on"; } catch { return false; }
 }
 
 export function setBackgroundEnabled(on: boolean, storage: Storage | null = local(), target: EventTarget = window): void {

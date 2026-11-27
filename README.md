@@ -109,7 +109,7 @@ The exact rules (agreement, convergence score, trends) are specified in [docs/ME
 
 ## The living background
 
-> On by default; everyone can switch it off with **Animated background** in the page header (remembered per browser).
+> Off by default; everyone can switch it on with **Animated background** in the ⚙ settings menu (remembered per browser).
 
 Behind the UI lives a slime mould (*Physarum*): ~65,000 agents simulated on the GPU (three.js) that follow each other's
 trails and grow vein networks. It treats the UI as bodies — it cannot enter panels, but their edges smell like food, so it
