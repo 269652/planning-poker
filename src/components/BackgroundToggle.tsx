@@ -2,9 +2,9 @@
 import { useEffect, useState } from "react";
 import { BACKGROUND_EVENT, backgroundEnabled, setBackgroundEnabled } from "@/ui/preferences";
 
-/** Switches the animated background on/off for this browser (off by default). */
+/** Switches the animated background on/off for this browser (on by default). */
 export default function BackgroundToggle() {
-  const [on, setOn] = useState(false);
+  const [on, setOn] = useState(true);
 
   useEffect(() => {
     setOn(backgroundEnabled());

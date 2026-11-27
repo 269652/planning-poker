@@ -10,9 +10,9 @@ const memory = (): Storage => {
 };
 
 describe("animated background preference", () => {
-  it("is off by default", () => {
-    expect(backgroundEnabled(memory())).toBe(false);
-    expect(backgroundEnabled(null)).toBe(false);
+  it("is on by default", () => {
+    expect(backgroundEnabled(memory())).toBe(true);
+    expect(backgroundEnabled(null)).toBe(true);
   });
 
   it("remembers the choice and announces changes", () => {
@@ -29,7 +29,7 @@ describe("animated background preference", () => {
 
   it("survives unavailable storage", () => {
     const broken = { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); } } as unknown as Storage;
-    expect(backgroundEnabled(broken)).toBe(false);
+    expect(backgroundEnabled(broken)).toBe(true);
     expect(() => setBackgroundEnabled(false, broken, new EventTarget())).not.toThrow();
   });
 });
