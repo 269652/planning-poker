@@ -27,29 +27,42 @@ export default function VotePanel({ ticket, me, send }: {
   // up or a tap). It comes back by itself when a new round or ticket starts.
   const [stashed, setStashed] = useState(false);
   const [drag, setDrag] = useState<number | null>(null);
-  const start = useRef<{ y: number; t: number } | null>(null);
+  // The whole sheet is the swipe area, cards included: a vertical drag moves the sheet, a tap still
+  // plays a card (or raises your hand). A drag only starts after a few pixels of mostly-vertical
+  // movement, and the click that follows a drag is swallowed.
+  const gesture = useRef<{ x: number; y: number; t: number; lastY: number; dragging: boolean } | null>(null);
   const swiped = useRef(false);
   const roundKey = `${ticket?.id}:${round?.number}`;
   useEffect(() => { setStashed(false); }, [roundKey]);
 
   const onDown = (e: React.PointerEvent) => {
-    if (!window.matchMedia("(max-width: 640px)").matches) return;
-    // The raise-hand button keeps working as a plain button.
-    if ((e.target as HTMLElement).closest("button:not(.sheet-handle)")) return;
-    start.current = { y: e.clientY, t: performance.now() };
+    if (!window.matchMedia("(max-width: 640px)").matches || (e.pointerType === "mouse" && e.button !== 0)) return;
+    gesture.current = { x: e.clientX, y: e.clientY, t: performance.now(), lastY: e.clientY, dragging: false };
     swiped.current = false;
   };
-  const onMove = (e: React.PointerEvent) => { if (start.current) setDrag(e.clientY - start.current.y); };
-  const onUp = (e: React.PointerEvent) => {
-    if (!start.current) return;
-    const dy = e.clientY - start.current.y;
-    const speed = dy / Math.max(1, performance.now() - start.current.t); // px per ms
-    start.current = null;
+  const onMove = (e: React.PointerEvent) => {
+    const g = gesture.current;
+    if (!g) return;
+    g.lastY = e.clientY;
+    const dy = e.clientY - g.y, dx = e.clientX - g.x;
+    if (!g.dragging) {
+      if (Math.abs(dy) < 8 || Math.abs(dy) < Math.abs(dx)) return;
+      g.dragging = true;
+      // Keep receiving moves even when the finger/mouse leaves the sheet.
+      try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* already released */ }
+    }
+    setDrag(dy);
+  };
+  const onUp = () => {
+    const g = gesture.current;
+    gesture.current = null;
+    if (!g?.dragging) return; // a tap: buttons handle it
+    const dy = g.lastY - g.y;
+    const speed = dy / Math.max(1, performance.now() - g.t); // px per ms
     setDrag(null);
-    if (Math.abs(dy) < 6) return; // a tap: the handle's onClick toggles
     swiped.current = true;
-    if (dy > 40 || speed > 0.5) setStashed(true);
-    else if (dy < -40 || speed < -0.5) setStashed(false);
+    if (dy > 50 || speed > 0.5) setStashed(true);
+    else if (dy < -50 || speed < -0.5) setStashed(false);
   };
   // While dragging, the sheet follows the finger (never above its open position).
   const dragStyle = drag === null ? undefined : {
@@ -58,11 +71,16 @@ export default function VotePanel({ ticket, me, send }: {
   };
 
   return (
-    <section className={`panel vote-panel ${isObserver ? "observing" : ""} ${stashed ? "stashed" : ""}`} style={dragStyle}>
-      <div className="sheet-grip" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
+    <section
+      className={`panel vote-panel ${isObserver ? "observing" : ""} ${stashed ? "stashed" : ""} ${drag !== null ? "dragging" : ""}`}
+      style={dragStyle}
+      onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+      onClickCapture={(e) => { if (swiped.current) { swiped.current = false; e.preventDefault(); e.stopPropagation(); } }}
+    >
+      <div className="sheet-grip">
         <button
           type="button" className="sheet-handle" aria-label={stashed ? "Show your cards" : "Hide your cards"} aria-expanded={!stashed}
-          onClick={() => { if (swiped.current) { swiped.current = false; return; } setStashed((s) => !s); }}
+          onClick={() => setStashed((s) => !s)}
         />
       <div className="ticket-head">
         <h3>Your card</h3>

@@ -74,7 +74,10 @@ label.check { display: flex; gap: .5rem; align-items: center; } label.check inpu
 @media (max-width: 1000px) {
   .layout { grid-template-columns: 1fr; }
   .layout > main { order: 0; } .col-right { position: static; order: 1; } .col-left { position: static; order: 2; }
-  .col-left .panel.queue { max-height: none; } .col-left .panel.chat { height: min(75vh, 40rem); }
+  /* Not a scroll area of its own here: with overflow + overscroll containment (from the sticky
+     desktop layout) a swipe that starts on the tickets would never scroll the page. */
+  .col-left .panel.queue { max-height: none; overflow: visible; overscroll-behavior: auto; }
+  .col-left .panel.chat { height: min(75vh, 40rem); }
   .deck.sidebar-deck { grid-template-columns: repeat(auto-fill, minmax(3.6rem, 1fr)); }
 }
 .back { text-decoration: none; display: inline-block; margin-bottom: .2rem; }
@@ -383,8 +386,10 @@ ul.people li.hand-up { background: color-mix(in srgb, #f5c542 18%, transparent);
     padding: .5rem .65rem calc(.6rem + env(safe-area-inset-bottom)); box-shadow: 0 -8px 28px rgba(0,0,0,.28); }
   .vote-panel { --sheet-peek: 5.9rem; transition: transform .28s cubic-bezier(.2, .8, .2, 1); will-change: transform; }
   .vote-panel.stashed { transform: translateY(calc(100% - var(--sheet-peek))); }
-  /* Swipe area: the handle and the header row. */
-  .sheet-grip { touch-action: none; cursor: grab; user-select: none; }
+  /* The whole sheet is the swipe area: the browser must not pan or scroll the page under it. */
+  .vote-panel { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  .vote-panel.dragging { cursor: grabbing; }
+  .sheet-grip { cursor: grab; }
   .sheet-handle { display: block; width: 100%; height: 1rem; margin: -.25rem 0 .1rem; padding: 0; border: 0; background: none; cursor: grab; }
   .sheet-handle::before { content: ""; display: block; width: 2.6rem; height: 5px; margin: 0 auto; border-radius: 3px; background: var(--border); }
   .vote-panel.stashed .sheet-handle::before { background: var(--primary); }
