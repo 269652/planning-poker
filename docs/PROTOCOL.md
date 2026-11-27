@@ -52,21 +52,23 @@ Messages are JSON objects with a `type`. The first message must be `join`.
 | --- | --- | --- | --- |
 | `join` | `roomId`, `name` (≤40), `role?` (`voter`\|`observer`), `token?` | anyone | Joins; with a known `token` resumes the same participant. The first joiner (the host's own tab) is the host. |
 | `vote` | `card` (`0…100`, `"?"`, `"coffee"`) | voter | Sets/changes own vote while round is `voting`. |
-| `reveal` | – | host | Reveals the round, computes statistics. |
-| `nextRound` | – | host | Starts a new round after a reveal. |
-| `nextTicket` | – | host | Moves to the next **open** ticket after the current one in list order (wrapping around; skipping an unfinished one is allowed) and opens its round 1. `NO_TICKET` if no other ticket is open. |
-| `finalize` | `value?` (numeric card) | host | Accepts the agreed estimate, or overrides with `value`. Starts Jira write-back for Jira tickets. |
-| `reopen` | `ticketId` | host | Re-estimates a ticket (new round, history kept). |
-| `selectTicket` | `ticketId` | host | Makes it the current ticket (opens round 1 if needed). |
-| `removeTicket` | `ticketId` | host | Removes a ticket. |
-| `addTicket` | `title`, `description?` | host | Adds a manual ticket. |
-| `importJira` | `issueKeys` (1–200 keys like `PROJ-1`) | host | The host's browser fetches the issues from Jira and adds new ones. If no ticket is current, the first imported one is selected. |
-| `retryWriteback` | `ticketId` | host | Retries a failed Jira write-back. |
+| `reveal` | – | host or PM | Reveals the round, computes statistics. |
+| `nextRound` | – | host or PM | Starts a new round after a reveal. |
+| `nextTicket` | – | host or PM | Moves to the next **open** ticket after the current one in list order (wrapping around; skipping an unfinished one is allowed) and opens its round 1. `NO_TICKET` if no other ticket is open. |
+| `finalize` | `value?` (numeric card) | host or PM | Accepts the agreed estimate, or overrides with `value`. Starts Jira write-back for Jira tickets. |
+| `reopen` | `ticketId` | host or PM | Re-estimates a ticket (new round, history kept). |
+| `selectTicket` | `ticketId` | host or PM | Makes it the current ticket (opens round 1 if needed). |
+| `removeTicket` | `ticketId` | host or PM | Removes a ticket. |
+| `addTicket` | `title`, `description?` | host or PM | Adds a manual ticket. |
+| `importJira` | `issueKeys` (1–200 keys like `PROJ-1`) | host or PM | The host's browser fetches the issues from Jira and adds new ones. If no ticket is current, the first imported one is selected. |
+| `retryWriteback` | `ticketId` | host or PM | Retries a failed Jira write-back. |
 | `setRule` | `rule` (`unanimous`\|`adjacent`) | host | Changes the agreement rule for future reveals. |
 | `raiseHand` | `raised` (boolean) | anyone | Raises/lowers your hand (you want to say something). Hands are lowered automatically on a new round or ticket. |
 | `chat` | `text` (1–500 chars) | anyone | Posts a message to the room chat. The room keeps the latest 100 messages, and every `state` carries them in `room.chat` (`id`, `authorId`, `name`, `text`, `at`). At most 5 messages per sender every 5 s (`RATE_LIMITED`). Optional `image`: a PNG/JPEG/WebP/GIF data URL of at most 140,000 characters (the app shrinks pasted images to fit); then `text` may be empty. The message gets an `imageId`, and the image itself travels separately as `image`. Text is a small Markdown dialect (bold, italic, strike, code, links, quotes, lists); Jira keys like `BMG-123` render as ticket mentions. |
 | `react` | `messageId`, `emoji` | anyone | Toggles your reaction on a chat message (`👍 ❤️ 😆 😮 😢 🎉`); shown in `room.chat[].reactions` as emoji → participant ids. |
 | `nudge` | `participantId?` | anyone | Pings connected voters who haven't voted in the open round — everyone, or one participant (who must still have to vote). Each pinged person gets `nudged`; at most one ping per sender every 10 s (`RATE_LIMITED`). |
+| `setModerator` | `participantId`, `moderator` (boolean) | host | Appoints or removes a **PM** (`isModerator` in the view). A PM may do everything marked *host or PM*: run the queue, reveal, play another round, finalize and re-estimate, and import from Jira through the host's helper. The agreement rule stays with the host. |
+| `jira` | `reqId`, `op` (`searchBoards` \| `listBoards` \| `getBoard` \| `listSprints` \| `listIssues`), `args` (≤ 3) | host or PM | A Jira **read** run by the host's browser with its helper; the answer comes back as `jiraResult` to the asker only (issues without descriptions, at most 300). PMs never need Jira access or credentials, and only the host writes to Jira (on `finalize`). |
 | `ping` | – | anyone | Keep-alive and heartbeat; answered with `pong`. A connection that has sent a `ping` and then stays silent for 45 s counts as gone (its participant leaves). The app sends one every 15 s. |
 | `leave` | – | anyone | The tab is closing: the participant leaves right away (`connected: false`; hidden from the table, not counted as "to vote"). Any later message on the connection, or a new `join` with the token, brings them back. |
 
@@ -79,6 +81,7 @@ Messages are JSON objects with a `type`. The first message must be `join`.
 | `error` | `code`, `message` | The request failed; the connection stays open. |
 | `pong` | – | Reply to `ping`. |
 | `image` | `id`, `data` (data URL) | A chat image: sent to everyone when posted, and to each participant when they join. The host keeps the latest 30 in memory only (not saved with the room), so after the host reloads, older messages show "image no longer available". |
+| `jiraResult` | `reqId`, `ok`, `data` or `error` | The answer to a PM's `jira` request. |
 | `nudged` | `from` (name) | Someone is waiting for your vote; the app plays a short chime and shows a toast. Sent only to the pinged people. |
 
 `RoomView` (see `src/core/room.ts`): `id`, `name`, `board` (`{ id, name, type }` or `null`), `rule`, `you`, `hostId`,

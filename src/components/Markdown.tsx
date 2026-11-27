@@ -20,10 +20,10 @@ export function mentionContext(view: RoomView, send?: (m: ClientMessage) => void
   // Jira links look like …/browse/KEY-1: any imported ticket tells us the base.
   const withUrl = view.tickets.find((t) => t.url && /\/browse\/[^/]+$/.test(t.url));
   const jiraBase = withUrl ? withUrl.url!.replace(/\/browse\/[^/]+$/, "") : null;
-  const isHost = view.hostId === view.you;
+  const canImport = view.hostId === view.you || !!view.participants.find((p) => p.id === view.you)?.isModerator;
   return {
     tickets, currentTicketId: view.currentTicketId, jiraBase,
-    importKey: isHost && send ? (key) => send({ type: "importJira", issueKeys: [key] }) : undefined,
+    importKey: canImport && send ? (key) => send({ type: "importJira", issueKeys: [key] }) : undefined,
   };
 }
 

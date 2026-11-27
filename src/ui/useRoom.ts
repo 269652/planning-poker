@@ -5,6 +5,7 @@ import type { Role, RoomView } from "@/core/room";
 import { HostEngine, type PeerLink } from "@/host/engine";
 import { DEFAULT_HELPER_URL, gatewayForHelper, probeHelper, type HelperStatus } from "@/jira/helper";
 import { MockJira } from "@/jira/mock";
+import { RelayJiraGateway } from "@/jira/relayGateway";
 import type { JiraGateway } from "@/jira/types";
 import { hostRoom, joinRoom, type HostState } from "@/net/relay";
 import { relayUrl } from "./site";
@@ -45,11 +46,22 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
     if (!RELAY_URL) { setFatal("This site has no relay configured (NEXT_PUBLIC_RELAY_URL)"); return; }
     const store = LocalStore.browser();
     let gotView = false;
+    // A guest who is made PM gets Jira through the host (see RelayJiraGateway).
+    let relayJira: RelayJiraGateway | null = null;
+    let isPm = false;
     const deliver = (m: ServerMessage) => {
+      if (relayJira?.receive(m)) return;
       if (m.type === "welcome") { store.setToken(roomId, m.token); setToken(m.token); }
       else if (m.type === "state") {
         gotView = true;
         setView(m.room);
+        const pm = !hosting && !!m.room.participants.find((p) => p.id === m.room.you)?.isModerator;
+        if (pm !== isPm && relayJira) {
+          isPm = pm;
+          if (!pm) relayJira.dispose("You are no longer a PM");
+          setJira(pm ? relayJira : null);
+          if (pm) setHelper({ state: "connected", user: "via the host", jiraUrl: "", storyPointsField: null });
+        }
         if (!hosting) {
           store.rememberJoined({
             id: m.room.id, name: m.room.name, board: m.room.board, seenAt: Date.now(),
@@ -133,6 +145,7 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
     sendRef.current = (m) => {
       if (!guest.send(m)) setError({ code: "OFFLINE", message: "Not connected to the host — reconnecting…", id: ++errId.current });
     };
+    relayJira = new RelayJiraGateway((m) => guest.send(m));
     // Presence: a heartbeat to the host, and an explicit goodbye when the tab closes. (A reload
     // also says goodbye; the page joins again right after, with its token and its vote.)
     const heartbeat = setInterval(() => guest.send({ type: "ping" }), 15_000);
@@ -142,6 +155,7 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
     window.addEventListener("pageshow", back);
     return () => {
       clearInterval(heartbeat);
+      relayJira?.dispose(); setJira(null);
       window.removeEventListener("pagehide", bye);
       window.removeEventListener("pageshow", back);
       guest.stop(); sendRef.current = () => {};

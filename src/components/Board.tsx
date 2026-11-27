@@ -54,6 +54,8 @@ export default function Board({ view, status, error, dismissError, send, shareUr
   const fireworksSeq = useRef(0);
   const isHost = view.hostId === view.you;
   const me = view.participants.find((p) => p.id === view.you);
+  // Host or PM: runs the session (tickets, import, reveal, rounds). The rule stays with the host.
+  const canModerate = isHost || !!me?.isModerator;
   const queue = useMemo(() => ticketQueue(view), [view]);
 
   const push = useCallback((t: Toast) => {
@@ -101,7 +103,7 @@ export default function Board({ view, status, error, dismissError, send, shareUr
         <h1 title={view.name}>{view.name}</h1>
         <span className="topbar-meta muted small">
           {view.board && <><span className="nowrap">Board <b>{view.board.name}</b></span> · </>}
-          <span className="nowrap">Rule: {view.rule === "unanimous" ? "unanimous" : "adjacent (±1 card)"}</span> · <span className="nowrap">you are {isHost ? "the host" : me?.role === "observer" ? "observing" : "a voter"}</span>
+          <span className="nowrap">Rule: {view.rule === "unanimous" ? "unanimous" : "adjacent (±1 card)"}</span> · <span className="nowrap">you are {isHost ? "the host" : me?.isModerator ? `the PM${me.role === "observer" ? " (observing)" : ""}` : me?.role === "observer" ? "observing" : "a voter"}</span>
         </span>
         <div className="topbar-right">
           {hosting
@@ -137,10 +139,10 @@ export default function Board({ view, status, error, dismissError, send, shareUr
 
       <div className="layout">
         <aside className="col-left">
-          <SideTabs view={view} queue={queue} isHost={isHost} send={send} onImport={onImport} images={images} />
+          <SideTabs view={view} queue={queue} isHost={canModerate} send={send} onImport={onImport} images={images} />
         </aside>
         <main>
-          <RoundPanel view={view} ticket={queue.current} next={queue.next} remaining={queue.upNext.length} isHost={isHost} send={send} />
+          <RoundPanel view={view} ticket={queue.current} next={queue.next} remaining={queue.upNext.length} isHost={canModerate} send={send} />
         </main>
         <aside className="col-right">
           <VotePanel ticket={queue.current} me={me ?? null} send={send} />

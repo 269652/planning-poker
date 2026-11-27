@@ -26,6 +26,7 @@ export default function ChatPanel({ view, send, images, isHost }: {
   const picker = useRef<HTMLInputElement>(null);
   const stick = useRef(true);
   const chat = view.chat;
+  // (isHost here means "may moderate": host or PM — they may add mentioned tickets.)
   const ctx = useMemo(() => mentionContext(view, isHost ? send : undefined), [view, send, isHost]);
   const names = useMemo(() => new Map(view.participants.map((p) => [p.id, p.name])), [view.participants]);
 

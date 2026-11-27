@@ -106,6 +106,82 @@ describe("HostEngine: presence (closing the tab leaves the room)", () => {
   });
 });
 
+describe("HostEngine: PM role (moderates and uses Jira through the host)", () => {
+  async function setup() {
+    const host = await join("Host");
+    const pm = await join("Paula");
+    const bob = await join("Bob");
+    return { host, pm, bob };
+  }
+  const results = (p: TestPeer) => p.messages.filter((m) => m.type === "jiraResult") as Extract<ServerMessage, { type: "jiraResult" }>[];
+
+  it("only the host appoints PMs; everyone sees the role", async () => {
+    const { host, pm, bob } = await setup();
+    await bob.send({ type: "setModerator", participantId: pm.you!, moderator: true });
+    expect(bob.errors.at(-1)?.code).toBe("FORBIDDEN");
+    await host.send({ type: "setModerator", participantId: pm.you!, moderator: true });
+    expect(bob.view!.participants.find((p) => p.id === pm.you)!.isModerator).toBe(true);
+    await host.send({ type: "setModerator", participantId: host.you!, moderator: false });
+    expect(host.errors.at(-1)?.code).toBe("INVALID");
+  });
+
+  it("a PM runs the session: tickets, reveal, another round, finalize — others still can't", async () => {
+    const { host, pm, bob } = await setup();
+    await pm.send({ type: "addTicket", title: "Login" });
+    expect(pm.errors.at(-1)?.code).toBe("FORBIDDEN");
+    await host.send({ type: "setModerator", participantId: pm.you!, moderator: true });
+    await pm.send({ type: "addTicket", title: "Login" });
+    await pm.send({ type: "selectTicket", ticketId: pm.view!.tickets[0].id });
+    await bob.send({ type: "vote", card: 5 });
+    await bob.send({ type: "reveal" });
+    expect(bob.errors.at(-1)?.code).toBe("FORBIDDEN");
+    await pm.send({ type: "reveal" });
+    expect(host.view!.tickets[0].rounds[0].status).toBe("revealed");
+    await pm.send({ type: "nextRound" });
+    await bob.send({ type: "vote", card: 5 });
+    await pm.send({ type: "reveal" });
+    await pm.send({ type: "finalize" });
+    expect(host.view!.tickets[0].estimate).toBe(5);
+    await pm.send({ type: "setRule", rule: "adjacent" }); // the rule stays with the host
+    expect(pm.errors.at(-1)?.code).toBe("FORBIDDEN");
+  });
+
+  it("a PM reads Jira through the host's helper and imports; answers go only to the asker", async () => {
+    const { host, pm, bob } = await setup();
+    await pm.send({ type: "jira", reqId: "r0", op: "listBoards", args: [] });
+    expect(results(pm).at(-1)).toMatchObject({ reqId: "r0", ok: false });
+    await host.send({ type: "setModerator", participantId: pm.you!, moderator: true });
+    await pm.send({ type: "jira", reqId: "r1", op: "listBoards", args: [] });
+    const boards = results(pm).at(-1)!;
+    expect(boards).toMatchObject({ reqId: "r1", ok: true });
+    const board = (boards as { data: { id: number }[] }).data[0];
+    await pm.send({ type: "jira", reqId: "r2", op: "listIssues", args: [board.id, { scope: "all" }] });
+    const issues = results(pm).at(-1) as { ok: boolean; data: { key: string; description: string }[] };
+    expect(issues.ok).toBe(true);
+    expect(issues.data.length).toBeGreaterThan(0);
+    expect(issues.data.every((i) => i.description === "")).toBe(true); // stays at the host
+    expect(results(bob)).toHaveLength(0);
+    expect(results(host)).toHaveLength(0);
+    await pm.send({ type: "importJira", issueKeys: [issues.data[0].key] });
+    expect(host.view!.tickets.map((t) => t.key)).toContain(issues.data[0].key);
+  });
+
+  it("without the host's helper, a PM gets a clear answer", async () => {
+    engine.setJira(null);
+    const { host, pm } = await setup();
+    await host.send({ type: "setModerator", participantId: pm.you!, moderator: true });
+    await pm.send({ type: "jira", reqId: "r1", op: "searchBoards", args: ["x"] });
+    expect(results(pm).at(-1)).toMatchObject({ ok: false, error: expect.stringMatching(/helper/) });
+  });
+
+  it("rejects writes and unknown Jira operations at the protocol level", async () => {
+    const { pm } = await setup();
+    await pm.send({ type: "jira", reqId: "r1", op: "writeEstimate", args: ["BMG-1", 5] } as Record<string, unknown>);
+    await pm.send({ type: "jira", reqId: "r2", op: "getIssues", args: [] } as Record<string, unknown>);
+    expect(pm.errors.map((e) => e.code)).toEqual(["BAD_MESSAGE", "BAD_MESSAGE"]);
+  });
+});
+
 describe("HostEngine: connections", () => {
   it("requires join first, rejects other rooms and malformed or oversized input", async () => {
     const p = new TestPeer(engine);

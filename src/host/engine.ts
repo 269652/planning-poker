@@ -2,7 +2,7 @@ import { RoomError, type Room, type RoomView } from "@/core/room";
 import { ProtocolError, parseClientMessage, type ClientMessage, type ServerMessage } from "@/core/protocol";
 import { formatEstimateComment } from "@/jira/comment";
 import { JiraError } from "@/jira/client";
-import type { JiraGateway } from "@/jira/types";
+import type { JiraGateway, ListIssuesOptions } from "@/jira/types";
 
 /** One participant's connection to the host (a guest via the relay, or the host's own tab). */
 export interface PeerLink {
@@ -146,6 +146,7 @@ export class HostEngine {
         return;
       }
       if (!conn.pid) throw new RoomError("NOT_JOINED", "Join a room first");
+      if (msg.type === "jira") { await this.jiraProxy(conn, conn.pid, msg); return; }
       await this.handle(conn.pid, msg);
     } catch (e) {
       const [code, message] =
@@ -158,7 +159,43 @@ export class HostEngine {
     }
   }
 
-  private async handle(pid: string, msg: Exclude<ClientMessage, { type: "join" | "ping" }>) {
+  /**
+   * A PM's Jira read, run with the host's helper (the PM's browser never talks to Jira and never
+   * sees the credentials). Only reads; the answer goes to the asking connection only.
+   */
+  private async jiraProxy(conn: Conn, pid: string, msg: Extract<ClientMessage, { type: "jira" }>) {
+    const reply = (m: { ok: true; data: unknown } | { ok: false; error: string }) => this.safeSend(conn, { type: "jiraResult", reqId: msg.reqId, ...m });
+    if (!this.room.canModerate(pid)) { reply({ ok: false, error: "Only the host or a PM can use Jira here" }); return; }
+    const jira = this.jira;
+    if (!jira) { reply({ ok: false, error: "The host's Jira helper is not connected right now" }); return; }
+    const num = (v: unknown) => { const n = Number(v); if (!Number.isInteger(n) || n <= 0) throw new Error("Invalid id"); return n; };
+    const [a, b] = msg.args;
+    try {
+      let data: unknown;
+      switch (msg.op) {
+        case "searchBoards": data = await jira.searchBoards(String(a ?? "").slice(0, 200)); break;
+        case "listBoards": data = await jira.listBoards(); break;
+        case "getBoard": data = await jira.getBoard(num(a)); break;
+        case "listSprints": data = await jira.listSprints(num(a)); break;
+        case "listIssues": {
+          const o = (typeof b === "object" && b ? b : {}) as Record<string, unknown>;
+          const opts: ListIssuesOptions = {
+            ...(o.sprintId !== undefined ? { sprintId: num(o.sprintId) } : {}),
+            ...(o.scope === "all" || o.scope === "backlog" ? { scope: o.scope } : {}),
+            ...(typeof o.query === "string" && o.query.trim() ? { query: o.query.slice(0, 200) } : {}),
+          };
+          // Descriptions stay at the host (the import fetches them itself): answers stay small.
+          data = (await jira.listIssues(num(a), opts)).slice(0, 300).map((i) => ({ ...i, description: "" }));
+          break;
+        }
+      }
+      reply({ ok: true, data });
+    } catch (e) {
+      reply({ ok: false, error: (e as Error).message || "Jira request failed" });
+    }
+  }
+
+  private async handle(pid: string, msg: Exclude<ClientMessage, { type: "join" | "ping" | "leave" | "jira" }>) {
     const room = this.room;
     switch (msg.type) {
       case "vote": room.vote(pid, msg.card); break;
@@ -172,6 +209,7 @@ export class HostEngine {
       case "setRule": room.setRule(pid, msg.rule); break;
       case "raiseHand": room.raiseHand(pid, msg.raised); break;
       case "react": room.react(pid, msg.messageId, msg.emoji); break;
+      case "setModerator": room.setModerator(pid, msg.participantId, msg.moderator); break;
       case "chat": {
         if (!msg.image) { room.chat(pid, msg.text); break; }
         // The image travels once, on its own; the message (in every state) only refers to it.
@@ -195,7 +233,7 @@ export class HostEngine {
         return;
       }
       case "retryWriteback": {
-        if (!room.isHost(pid)) throw new RoomError("FORBIDDEN", "Only the host can do this");
+        if (!room.canModerate(pid)) throw new RoomError("FORBIDDEN", "Only the host or a PM can do this");
         const t = room.getTicket(msg.ticketId);
         if (!t) throw new RoomError("NOT_FOUND", "Unknown ticket");
         if (t.status !== "estimated" || !t.key) throw new RoomError("BAD_PHASE", "Nothing to write back");
@@ -203,7 +241,7 @@ export class HostEngine {
         return;
       }
       case "importJira": {
-        if (!room.isHost(pid)) throw new RoomError("FORBIDDEN", "Only the host can do this");
+        if (!room.canModerate(pid)) throw new RoomError("FORBIDDEN", "Only the host or a PM can do this");
         const jira = this.jira;
         if (!jira) throw new JiraError("Jira is not configured — open Jira settings on the start page");
         const existing = new Set(room.view(pid).tickets.map((t) => t.key));

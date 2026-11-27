@@ -173,7 +173,7 @@ const ticket = (over: Partial<TicketView>): TicketView => ({
   rounds: [round({})], writeback: { status: "none" }, convergence: {} as TicketView["convergence"], ...over,
 });
 const person = (id: string, over: Partial<RoomView["participants"][number]> = {}) =>
-  ({ id, name: id.toUpperCase(), role: "voter" as const, connected: true, isHost: id === "a", hasVoted: false, handRaised: false, ...over });
+  ({ id, name: id.toUpperCase(), role: "voter" as const, connected: true, isHost: id === "a", isModerator: false, hasVoted: false, handRaised: false, ...over });
 const view = (over: Partial<RoomView>): RoomView => ({
   id: "R", name: "R", board: null, rule: "unanimous", you: "a", hostId: "a", currentTicketId: "t1",
   participants: [person("a")], tickets: [ticket({})], chat: [], ...over,

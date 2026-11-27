@@ -12,6 +12,7 @@ export default function ParticipantsPanel({ view, voting, send }: {
   const voters = view.participants.filter((p) => p.role === "voter" && p.connected);
   const voted = voters.filter((p) => p.hasVoted).length;
   const left = view.participants.filter((p) => !p.connected).length;
+  const amHost = view.hostId === view.you;
   const waiting = voting ? voters.filter((p) => !p.hasVoted && p.id !== view.you) : [];
   const [cooldownUntil, setCooldownUntil] = useState(0);
   const [, rerender] = useState(0);
@@ -53,8 +54,19 @@ export default function ParticipantsPanel({ view, voting, send }: {
                 {p.handRaised && <span className="hand" title="Hand raised — wants to say something">✋ </span>}
                 {p.name}{p.id === view.you ? " (you)" : ""}
                 {p.isHost && <span className="badge">host</span>}
+                {p.isModerator && <span className="badge pm" title="PM: runs the session and imports from Jira through the host">PM</span>}
                 {p.role === "observer" && <span className="badge">observer</span>}
               </span>
+              {amHost && !p.isHost && (
+                <button
+                  className={`link small pm-toggle ${p.isModerator ? "on" : ""}`}
+                  title={p.isModerator ? `Remove ${p.name}'s PM role` : `Make ${p.name} PM: they can run the session (reveal, rounds, tickets) and import from Jira through your helper`}
+                  aria-pressed={p.isModerator}
+                  onClick={() => send({ type: "setModerator", participantId: p.id, moderator: !p.isModerator })}
+                >
+                  {p.isModerator ? "PM ✓" : "Make PM"}
+                </button>
+              )}
               {p.role === "voter" && p.hasVoted && <span title="voted">✓</span>}
               {canPing && (
                 <button

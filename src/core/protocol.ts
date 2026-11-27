@@ -15,9 +15,13 @@ const ISSUE_KEY = /^[A-Z][A-Z0-9_]*-\d+$/i;
 
 export const CLIENT_MESSAGE_TYPES = [
   "join", "vote", "reveal", "nextRound", "nextTicket", "finalize", "reopen", "selectTicket", "removeTicket",
-  "addTicket", "importJira", "retryWriteback", "setRule", "raiseHand", "nudge", "chat", "react", "leave", "ping",
+  "addTicket", "importJira", "retryWriteback", "setRule", "raiseHand", "nudge", "chat", "react", "leave", "setModerator", "jira", "ping",
 ] as const;
-export const SERVER_MESSAGE_TYPES = ["welcome", "state", "error", "pong", "nudged", "image"] as const;
+export const SERVER_MESSAGE_TYPES = ["welcome", "state", "error", "pong", "nudged", "image", "jiraResult"] as const;
+
+/** Jira reads a PM may run through the host's helper (writing to Jira stays with the host). */
+export const JIRA_PROXY_OPS = ["searchBoards", "listBoards", "getBoard", "listSprints", "listIssues"] as const;
+export type JiraProxyOp = (typeof JIRA_PROXY_OPS)[number];
 
 export type ClientMessage =
   | { type: "join"; roomId: string; name: string; role: Role; token?: string }
@@ -39,6 +43,10 @@ export type ClientMessage =
   | { type: "react"; messageId: string; emoji: string }
   /** The tab is closing: leave the room now (a later message on the same connection rejoins). */
   | { type: "leave" }
+  /** Host only: appoint or remove a PM. */
+  | { type: "setModerator"; participantId: string; moderator: boolean }
+  /** PM: a Jira read through the host's helper; answered with `jiraResult` (same `reqId`). */
+  | { type: "jira"; reqId: string; op: JiraProxyOp; args: (string | number | Record<string, unknown>)[] }
   | { type: "ping" };
 
 export type ServerMessage =
@@ -48,7 +56,9 @@ export type ServerMessage =
   | { type: "pong" }
   | { type: "nudged"; from: string }
   /** A chat image (sent once when posted, and to everyone who joins while the host still has it). */
-  | { type: "image"; id: string; data: string };
+  | { type: "image"; id: string; data: string }
+  /** The answer to a PM's `jira` request. */
+  | { type: "jiraResult"; reqId: string; ok: true; data: unknown } | { type: "jiraResult"; reqId: string; ok: false; error: string };
 
 function str(o: Record<string, unknown>, k: string, max = 500): string {
   const v = o[k];
@@ -106,6 +116,18 @@ export function parseClientMessage(raw: string): ClientMessage {
       return { type: "raiseHand", raised: m.raised };
     case "react":
       return { type: "react", messageId: str(m, "messageId", 100), emoji: str(m, "emoji", 16) };
+    case "setModerator":
+      if (typeof m.moderator !== "boolean") throw new ProtocolError("moderator must be true or false");
+      return { type: "setModerator", participantId: str(m, "participantId", 100), moderator: m.moderator };
+    case "jira": {
+      const op = m.op;
+      if (!(JIRA_PROXY_OPS as readonly unknown[]).includes(op)) throw new ProtocolError("Unknown Jira operation");
+      const args = m.args === undefined ? [] : m.args;
+      const okArg = (a: unknown) => (typeof a === "string" && a.length <= 200) || (typeof a === "number" && Number.isFinite(a))
+        || (typeof a === "object" && a !== null && !Array.isArray(a) && JSON.stringify(a).length <= 500);
+      if (!Array.isArray(args) || args.length > 3 || !args.every(okArg)) throw new ProtocolError("Invalid Jira arguments");
+      return { type: "jira", reqId: str(m, "reqId", 40), op: op as JiraProxyOp, args: args as (string | number | Record<string, unknown>)[] };
+    }
     case "chat": {
       const image = m.image;
       if (image !== undefined && (typeof image !== "string" || image.length > MAX_IMAGE_CHARS || !IMAGE_DATA_URL.test(image))) {

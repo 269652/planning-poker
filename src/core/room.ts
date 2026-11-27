@@ -47,6 +47,11 @@ export interface Participant {
   connected: boolean;
   /** Wants to say something before the team moves on (lowered on a new round/ticket). */
   handRaised?: boolean;
+  /**
+   * PM / moderator, appointed by the host: may run the session (tickets, reveal, rounds, finalize)
+   * and import from Jira through the host's helper.
+   */
+  moderator?: boolean;
 }
 
 export interface Round {
@@ -138,6 +143,8 @@ export interface ParticipantView {
   role: Role;
   connected: boolean;
   isHost: boolean;
+  /** PM: may moderate the session and import from Jira (appointed by the host). */
+  isModerator: boolean;
   /** Has voted in the current round of the current ticket. */
   hasVoted: boolean;
   handRaised: boolean;
@@ -248,6 +255,19 @@ export class Room {
     return this.state.hostId === participantId;
   }
 
+  /** Host or PM: may run the session. */
+  canModerate(participantId: string): boolean {
+    return this.isHost(participantId) || !!this.state.participants.find((p) => p.id === participantId)?.moderator;
+  }
+
+  /** The host appoints (or removes) a PM. */
+  setModerator(actor: string, targetId: string, on: boolean): void {
+    this.requireHost(actor);
+    const t = this.participant(targetId);
+    if (t.id === this.state.hostId) throw new RoomError("INVALID", "The host can always moderate");
+    t.moderator = on;
+  }
+
   getTicket(id: string): Ticket | undefined {
     const t = this.state.tickets.find((x) => x.id === id);
     return t ? structuredClone(t) : undefined;
@@ -305,7 +325,7 @@ export class Room {
   // ---- tickets
 
   addTicket(actor: string, input: NewTicket): Ticket {
-    this.requireHost(actor);
+    this.requireModerator(actor);
     const title = input.title.trim();
     if (!title) throw new RoomError("INVALID", "Ticket title must not be empty");
     if (input.key && this.state.tickets.some((t) => t.key === input.key)) {
@@ -323,14 +343,14 @@ export class Room {
   }
 
   removeTicket(actor: string, ticketId: string): void {
-    this.requireHost(actor);
+    this.requireModerator(actor);
     this.ticket(ticketId);
     this.state.tickets = this.state.tickets.filter((t) => t.id !== ticketId);
     if (this.state.currentTicketId === ticketId) this.state.currentTicketId = null;
   }
 
   selectTicket(actor: string, ticketId: string): void {
-    this.requireHost(actor);
+    this.requireModerator(actor);
     const t = this.ticket(ticketId);
     if (this.state.currentTicketId !== t.id) this.lowerHands();
     this.state.currentTicketId = t.id;
@@ -342,7 +362,7 @@ export class Room {
    * session can work through its queue one ticket after another. Skipping an open ticket is allowed.
    */
   nextTicket(actor: string): void {
-    this.requireHost(actor);
+    this.requireModerator(actor);
     const list = this.state.tickets;
     const at = list.findIndex((t) => t.id === this.state.currentTicketId);
     const order = at < 0 ? list : [...list.slice(at + 1), ...list.slice(0, at)];
@@ -354,7 +374,7 @@ export class Room {
   }
 
   reopen(actor: string, ticketId: string): void {
-    this.requireHost(actor);
+    this.requireModerator(actor);
     const t = this.ticket(ticketId);
     t.status = "open";
     t.estimate = null;
@@ -449,7 +469,7 @@ export class Room {
   }
 
   reveal(actor: string): void {
-    this.requireHost(actor);
+    this.requireModerator(actor);
     const round = this.currentRound();
     if (round.status !== "voting") throw new RoomError("BAD_PHASE", "Round already revealed");
     const cards = Object.values(round.votes);
@@ -461,7 +481,7 @@ export class Room {
   }
 
   nextRound(actor: string): void {
-    this.requireHost(actor);
+    this.requireModerator(actor);
     const t = this.currentTicket();
     if (this.lastRound(t)?.status !== "revealed") throw new RoomError("BAD_PHASE", "Reveal the current round first");
     if (t.status === "estimated") throw new RoomError("BAD_PHASE", "Ticket is already estimated; reopen it first");
@@ -469,7 +489,7 @@ export class Room {
   }
 
   finalize(actor: string, value?: NumericCard): Ticket {
-    this.requireHost(actor);
+    this.requireModerator(actor);
     const t = this.currentTicket();
     const round = this.lastRound(t);
     if (!round || round.status !== "revealed" || !round.stats) throw new RoomError("BAD_PHASE", "Reveal the round before finalizing");
@@ -502,7 +522,7 @@ export class Room {
     return {
       id: s.id, name: s.name, board: s.board ?? null, rule: s.rule, you: forId, hostId: s.hostId, currentTicketId: s.currentTicketId,
       participants: s.participants.map((p) => ({
-        id: p.id, name: p.name, role: p.role, connected: p.connected, isHost: p.id === s.hostId,
+        id: p.id, name: p.name, role: p.role, connected: p.connected, isHost: p.id === s.hostId, isModerator: !!p.moderator,
         hasVoted: !!currentRound && p.id in currentRound.votes, handRaised: !!p.handRaised,
       })),
       tickets: s.tickets.map((t) => this.ticketView(t, forId)),
@@ -554,6 +574,11 @@ export class Room {
   }
 
   // ---- helpers
+
+  private requireModerator(actor: string): void {
+    this.participant(actor);
+    if (!this.canModerate(actor)) throw new RoomError("FORBIDDEN", "Only the host or a PM can do this");
+  }
 
   private requireHost(actor: string): void {
     this.participant(actor);
