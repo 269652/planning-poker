@@ -296,7 +296,11 @@ p.blockers { padding-left: 0; }
 .import-filters { display: flex; gap: .75rem; flex-wrap: wrap; } .import-filters label { min-width: 220px; margin-bottom: .5rem; }
 .import-search { margin-bottom: .25rem; }
 ul.issues li.already { opacity: .55; }
-.import .row.end { position: sticky; bottom: -1rem; background: var(--panel); padding: .5rem 0; }
+/* Import dialog (and its live view): header, filters and buttons stay put; only the list scrolls. */
+.modal.import { display: flex; flex-direction: column; overflow: hidden; height: min(85vh, 52rem); }
+.modal.import > * { flex: 0 0 auto; }
+.modal.import > ul.issues { position: relative; flex: 1 1 auto; min-height: 6rem; overflow-y: auto; overscroll-behavior: contain; margin: .35rem -.35rem 0; padding: 0 .35rem; }
+.import .row.end { background: var(--panel); padding: .5rem 0 0; border-top: 1px solid var(--border); }
 .banner { background: var(--warn); color: #000; padding: .5rem 1rem; border-radius: 8px; margin-bottom: 1rem; }
 .fireworks { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 25; }
 .toasts { position: fixed; bottom: 1rem; right: 1rem; display: flex; flex-direction: column; gap: .5rem; z-index: 30; max-width: min(28rem, calc(100vw - 2rem)); }
@@ -339,6 +343,59 @@ ul.tickets li { border: 1px solid var(--border); border-radius: 10px; margin-bot
 .ping-all { padding: .25rem .55rem; }
 .left-note { margin: .5rem 0 0; }
 .badge.pm { color: var(--primary); border-color: var(--primary); }
+
+/* Streaming the Jira import dialog */
+.stream-btn.on { border-color: var(--bad); color: var(--bad); }
+/* The live view's "Live" badge has exactly the size of the streamer's button (same header height). */
+.stream-btn.as-button { display: inline-flex; align-items: center; gap: .2rem; border: 1px solid var(--bad); border-radius: 8px; padding: .5rem .9rem; line-height: 1.45; }
+.live-dot { display: inline-block; width: .55rem; height: .55rem; border-radius: 50%; background: var(--bad); margin-right: .15rem; animation: pulse 1.4s ease-in-out infinite; vertical-align: middle; }
+.modal.import.streaming { box-shadow: 0 0 0 2px var(--bad), 0 12px 40px rgba(0,0,0,.3); }
+.stream-view { position: relative; }
+.stream-view ul.issues li.picked { background: var(--card-sel); border-radius: 6px; }
+/* The ghost lives inside the row/part it points at, positioned in % of it: it scrolls natively. */
+.stream-view li[data-key], .stream-view [data-anchor] { position: relative; }
+.stream-view .import-search-wrap { margin-bottom: .25rem; }
+.stream-view .import-search-wrap .import-search { margin-bottom: 0; }
+.ghost-cursor { position: absolute; z-index: 3; pointer-events: none; display: flex; align-items: flex-start; gap: .1rem; margin: -2px 0 0 -3px;
+  transition: left .045s linear, top .045s linear; }
+.ghost-cursor.jump { transition: none; }
+/* Everyone's mouse in the room: at the same spot of the window (vw/vh). */
+.board-cursor { position: fixed; z-index: 15; pointer-events: none; display: flex; align-items: flex-start; gap: .1rem; margin: -2px 0 0 -3px; opacity: .85;
+  transition: left .1s linear, top .1s linear; }
+.board-cursor.jump { transition: none; }
+.board-cursor.leaving { opacity: 0; transition: opacity 1.4s ease-in; }
+.board-cursor svg { fill: var(--c); stroke: #fff; stroke-width: 1.5; filter: drop-shadow(0 1px 2px rgba(0,0,0,.3)); flex: 0 0 auto; }
+.board-cursor span { margin-top: .9rem; background: var(--c); color: #fff; font-size: .68rem; font-weight: 600; padding: .02rem .38rem; border-radius: 999px; white-space: nowrap; }
+/* In the card pane: only a name tag — that they're here, not where. */
+.pane-presence { display: inline-flex; flex-wrap: wrap; gap: .2rem; vertical-align: middle; margin-left: .3rem; }
+.board-cursor.in-pane { position: static; margin: 0; transition: none; opacity: 1; }
+.board-cursor.in-pane svg { display: none; }
+.board-cursor.in-pane span { margin-top: 0; font-size: .66rem; }
+.board-cursor.in-pane span::before { content: "🂠 "; }
+@media (prefers-reduced-motion: reduce) { .board-cursor { transition: none; } }
+.cursor-debug { position: fixed; left: .5rem; bottom: .5rem; z-index: 60; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: .35rem .6rem; font-family: ui-monospace, Consolas, monospace; box-shadow: 0 4px 14px rgba(0,0,0,.2); }
+/* (Touch screens simply don't send a cursor; showing others' cursors there is fine. Hiding them by
+   "hover: none" also hid them on Windows laptops with a touchscreen.) */
+/* Other viewers' cursors: present, but quieter than the presenter's. */
+.ghost-cursor.faded { opacity: .5; }
+.ghost-cursor.faded svg { fill: var(--muted); }
+.ghost-cursor.faded span { background: var(--muted); }
+.import li[data-key], .import [data-anchor] { position: relative; }
+.import .import-search-wrap { margin-bottom: .25rem; }
+.import .import-search-wrap .import-search { margin-bottom: 0; }
+/* Opening a row shows what the ticket is about. */
+.row-toggle { border: 0; background: none; padding: 0 .15rem; width: 1.1rem; color: var(--muted); font-size: .8rem; line-height: 1; cursor: pointer; flex: 0 0 auto; }
+span.row-toggle { cursor: default; text-align: center; }
+.row-toggle:hover { color: var(--primary); }
+.import li.open { background: var(--bg); border-radius: 6px; }
+.row-detail { margin: .35rem 0 .2rem 1.6rem; padding: .5rem .7rem; border-left: 3px solid var(--primary); background: var(--panel); border-radius: 4px; max-height: 18rem; overflow-y: auto; font-size: .9rem; }
+.row-detail .md p:last-child { margin-bottom: 0; }
+/* As tall as the whole text: cursors placed in it (in %) scroll natively with the text. */
+.row-detail-text, .row-detail-text :is(p, li, h4, pre, blockquote, td, th) { position: relative; }
+.ghost-cursor svg { fill: var(--primary); stroke: #fff; stroke-width: 1.5; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
+.ghost-cursor span { margin-top: 1rem; background: var(--primary); color: var(--primary-text); font-size: .72rem; font-weight: 600; padding: .05rem .4rem; border-radius: 999px; white-space: nowrap; }
+.stream-pill { position: fixed; left: 50%; top: .75rem; transform: translateX(-50%); z-index: 35; border-radius: 999px; padding: .35rem .9rem; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+@media (prefers-reduced-motion: reduce) { .ghost-cursor { transition: none; } .live-dot { animation: none; } }
 .pm-toggle { opacity: .55; font-size: .75rem; white-space: nowrap; }
 ul.people li:hover .pm-toggle, .pm-toggle:focus, .pm-toggle.on { opacity: 1; }
 button.link.ping { font-size: 1rem; padding: 0 .2rem; }

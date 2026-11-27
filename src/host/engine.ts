@@ -1,5 +1,5 @@
 import { RoomError, type Room, type RoomView } from "@/core/room";
-import { ProtocolError, parseClientMessage, type ClientMessage, type ServerMessage } from "@/core/protocol";
+import { MAX_DESCRIPTION_CHARS, ProtocolError, parseClientMessage, type ClientMessage, type ServerMessage, type StreamList } from "@/core/protocol";
 import { formatEstimateComment } from "@/jira/comment";
 import { JiraError } from "@/jira/client";
 import type { JiraGateway, ListIssuesOptions } from "@/jira/types";
@@ -106,6 +106,7 @@ export class HostEngine {
   }
 
   private broadcast() {
+    this.endStreamIfGone();
     for (const c of this.conns) if (c.pid) this.safeSend(c, { type: "state", room: slim(this.room.view(c.pid)) });
     this.onChange?.(this.room);
   }
@@ -142,11 +143,21 @@ export class HostEngine {
         conn.pid = participant.id;
         this.safeSend(conn, { type: "welcome", token, you: participant.id });
         for (const [id, data] of this.images) this.safeSend(conn, { type: "image", id, data });
+        const s = this.streaming;
+        if (s?.list && s.pid !== participant.id) this.safeSend(conn, { type: "stream", from: s.pid, name: s.name, kind: "list", list: s.list });
         this.broadcast();
         return;
       }
       if (!conn.pid) throw new RoomError("NOT_JOINED", "Join a room first");
       if (msg.type === "jira") { await this.jiraProxy(conn, conn.pid, msg); return; }
+      if (msg.type === "stream") { this.stream(conn, conn.pid, msg); return; }
+      if (msg.type === "cursor") {
+        // Everyone's mouse, relayed to everyone else as is (it's anchored to what's on screen, and
+        // over the card pane it only says "in the cards"). Nothing is stored or broadcast.
+        const name = this.room.nameOf(conn.pid);
+        for (const c of this.conns) if (c.pid && c.pid !== conn.pid) this.safeSend(c, { type: "cursor", from: conn.pid, name, spot: msg.spot });
+        return;
+      }
       await this.handle(conn.pid, msg);
     } catch (e) {
       const [code, message] =
@@ -157,6 +168,37 @@ export class HostEngine {
       if (code === "INTERNAL") console.error("[host] unexpected error", e);
       this.safeSend(conn, { type: "error", code, message });
     }
+  }
+
+  /** Who is streaming their import dialog right now, and the list they last showed (for late joiners). */
+  private streaming: { pid: string; name: string; list: StreamList | null } | null = null;
+
+  /**
+   * Host or PM streams the import dialog: the list (when it changes) and the cursor/scroll (often)
+   * go to everyone else. Nothing here touches the room state, so nothing is saved or broadcast.
+   */
+  private stream(conn: Conn, pid: string, msg: Extract<ClientMessage, { type: "stream" }>) {
+    const name = this.room.nameOf(pid);
+    if (msg.kind === "list") {
+      if (!this.room.canModerate(pid)) throw new RoomError("FORBIDDEN", "Only the host or a PM can stream");
+      this.streaming = { pid, name, list: msg.list };
+    } else if (!this.streaming) {
+      return; // nothing is being streamed
+    } else if (msg.kind === "end") {
+      if (this.streaming.pid !== pid) return; // only the presenter ends it
+      this.streaming = null;
+    }
+    // Pointers: the presenter's and, while a stream is on, every viewer's (everyone sees everyone).
+    const { type: _t, ...payload } = msg;
+    for (const c of this.conns) if (c.pid && c !== conn && c.pid !== pid) this.safeSend(c, { type: "stream", from: pid, name, ...payload });
+  }
+
+  /** The streamer left or lost their role: tell everyone the stream is over. */
+  private endStreamIfGone() {
+    const s = this.streaming;
+    if (!s || (this.present(s.pid) && this.room.canModerate(s.pid))) return;
+    this.streaming = null;
+    for (const c of this.conns) if (c.pid && c.pid !== s.pid) this.safeSend(c, { type: "stream", from: s.pid, name: s.name, kind: "end" });
   }
 
   /**
@@ -177,6 +219,14 @@ export class HostEngine {
         case "listBoards": data = await jira.listBoards(); break;
         case "getBoard": data = await jira.getBoard(num(a)); break;
         case "listSprints": data = await jira.listSprints(num(a)); break;
+        case "getIssue": {
+          // One ticket with its description (shortened) — for opening a row in the import list.
+          const key = String(a ?? "");
+          if (!/^[A-Z][A-Z0-9_]*-\d+$/i.test(key)) throw new Error("Invalid issue key");
+          const [issue] = await jira.getIssues([key.toUpperCase()]);
+          data = issue ? { ...issue, description: (issue.description ?? "").slice(0, MAX_DESCRIPTION_CHARS) } : null;
+          break;
+        }
         case "listIssues": {
           const o = (typeof b === "object" && b ? b : {}) as Record<string, unknown>;
           const opts: ListIssuesOptions = {
@@ -195,7 +245,7 @@ export class HostEngine {
     }
   }
 
-  private async handle(pid: string, msg: Exclude<ClientMessage, { type: "join" | "ping" | "leave" | "jira" }>) {
+  private async handle(pid: string, msg: Exclude<ClientMessage, { type: "join" | "ping" | "leave" | "jira" | "stream" | "cursor" }>) {
     const room = this.room;
     switch (msg.type) {
       case "vote": room.vote(pid, msg.card); break;

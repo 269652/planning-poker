@@ -182,6 +182,82 @@ describe("HostEngine: PM role (moderates and uses Jira through the host)", () =>
   });
 });
 
+describe("HostEngine: streaming the import list", () => {
+  const list = { title: "BMG · backlog", issues: [{ key: "BMG-1", summary: "Login", issueType: "Story", status: "To Do", estimate: null, inSession: false }], picked: ["BMG-1"] };
+  const streams = (p: TestPeer) => p.messages.filter((m) => m.type === "stream") as Extract<ServerMessage, { type: "stream" }>[];
+
+  it("host/PM stream to everyone else (list, cursor, end); late joiners get the list; plain voters can't", async () => {
+    const host = await join("Host");
+    const pm = await join("Paula");
+    const bob = await join("Bob");
+    await bob.send({ type: "stream", kind: "list", list });
+    expect(bob.errors.at(-1)?.code).toBe("FORBIDDEN");
+    await host.send({ type: "setModerator", participantId: pm.you!, moderator: true });
+    await pm.send({ type: "stream", kind: "list", list });
+    await pm.send({ type: "stream", kind: "pointer", pointer: { x: 0.4, y: 0.5, scroll: 2 } });
+    expect(streams(bob).map((m) => m.kind)).toEqual(["list", "pointer"]);
+    expect(streams(bob)[0]).toMatchObject({ from: pm.you, name: "Paula", list: { picked: ["BMG-1"] } });
+    expect(streams(bob)[1]).toMatchObject({ pointer: { x: 0.4, y: 0.5, scroll: 1 } }); // clamped
+    expect(streams(host)).toHaveLength(2);
+    expect(streams(pm)).toHaveLength(0); // never echoed
+    const late = await join("Lea");
+    expect(streams(late).map((m) => m.kind)).toEqual(["list"]);
+    // A viewer's cursor goes to everyone else too — the presenter included (everyone sees everyone).
+    await bob.send({ type: "stream", kind: "pointer", pointer: { x: 0, y: 0, scroll: 0, row: "BMG-1", rx: 0.5, ry: 0.5 } });
+    expect(streams(host).at(-1)).toMatchObject({ kind: "pointer", from: bob.you, name: "Bob" });
+    expect(streams(pm).at(-1)).toMatchObject({ kind: "pointer", from: bob.you });
+    expect(streams(bob).filter((m) => m.from === bob.you)).toHaveLength(0); // never echoed
+    await bob.send({ type: "stream", kind: "end" }); // only the presenter ends it
+    expect(streams(host).at(-1)!.kind).toBe("pointer");
+    await pm.send({ type: "stream", kind: "end" });
+    expect(streams(bob).at(-1)!.kind).toBe("end");
+    const before = streams(host).length;
+    await bob.send({ type: "stream", kind: "pointer", pointer: { x: 0, y: 0, scroll: 0 } }); // no stream on: dropped
+    expect(streams(host)).toHaveLength(before);
+  });
+
+  it("the stream ends when the streamer leaves or loses the PM role", async () => {
+    const host = await join("Host");
+    const pm = await join("Paula");
+    const bob = await join("Bob");
+    await host.send({ type: "setModerator", participantId: pm.you!, moderator: true });
+    await pm.send({ type: "stream", kind: "list", list });
+    await host.send({ type: "setModerator", participantId: pm.you!, moderator: false });
+    expect(streams(bob).at(-1)!.kind).toBe("end");
+    await host.send({ type: "setModerator", participantId: pm.you!, moderator: true });
+    await pm.send({ type: "stream", kind: "list", list });
+    await pm.send({ type: "leave" });
+    expect(streams(bob).at(-1)!.kind).toBe("end");
+  });
+});
+
+describe("HostEngine: everyone's mouse in the room", () => {
+  const cursors = (p: TestPeer) => p.messages.filter((m) => m.type === "cursor") as Extract<ServerMessage, { type: "cursor" }>[];
+
+  it("relays each cursor to everyone else, never back; the card pane only says 'in the cards'", async () => {
+    const host = await join("Host");
+    const bob = await join("Bob");
+    const cara = await join("Cara");
+    const savesBefore = changes;
+    await bob.send({ type: "cursor", spot: { x: 0.1, y: 0.2 } });
+    expect(cursors(host).at(-1)).toEqual({ type: "cursor", from: bob.you, name: "Bob", spot: { x: 0.1, y: 0.2 } });
+    // Only the window spot goes out (anything else a client adds is dropped).
+    await bob.send({ type: "cursor", spot: { x: 0.3, y: 0.4, at: "ticket:abc", path: "DIV.0" } as never });
+    expect(cursors(host).at(-1)!.spot).toEqual({ x: 0.3, y: 0.4 });
+    expect(cursors(cara).at(-1)?.from).toBe(bob.you);
+    expect(cursors(bob)).toHaveLength(0);
+    // Over the cards: whatever a (modified) client sends, only "in the cards" goes out.
+    await bob.send({ type: "cursor", spot: { cards: true, x: 0.9, y: 0.4 } });
+    expect(cursors(host).at(-1)!.spot).toEqual({ x: 0, y: 0, cards: true });
+    await bob.send({ type: "cursor", spot: null });
+    expect(cursors(cara).at(-1)!.spot).toBeNull();
+    await bob.send({ type: "cursor", spot: { x: 2, y: -1 } });
+    expect(cursors(host).at(-1)!.spot).toEqual({ x: 1, y: 0 }); // clamped to the window
+    expect(changes).toBe(savesBefore); // nothing stored, nothing saved
+    expect(host.messages.filter((m) => m.type === "state").length).toBeGreaterThan(0);
+  });
+});
+
 describe("HostEngine: connections", () => {
   it("requires join first, rejects other rooms and malformed or oversized input", async () => {
     const p = new TestPeer(engine);

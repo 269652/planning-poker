@@ -73,6 +73,8 @@ export default function VotePanel({ ticket, me, send }: {
   return (
     <section
       className={`panel vote-panel ${isObserver ? "observing" : ""} ${stashed ? "stashed" : ""} ${drag !== null ? "dragging" : ""}`}
+      // Private: others only see *that* someone is in here, never where (it would hint at the card).
+      data-cursor-private="cards"
       style={dragStyle}
       onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
       onClickCapture={(e) => { if (swiped.current) { swiped.current = false; e.preventDefault(); e.stopPropagation(); } }}
@@ -83,7 +85,7 @@ export default function VotePanel({ ticket, me, send }: {
           onClick={() => setStashed((s) => !s)}
         />
       <div className="ticket-head">
-        <h3>Your card</h3>
+        <h3>Your card <span className="pane-presence" data-cursor-slot="cards" /></h3>
         {me && (
           <button
             className={`hand-btn ${me.handRaised ? "raised" : ""}`}

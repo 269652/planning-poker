@@ -80,6 +80,7 @@ describe("message type registry", () => {
       addTicket: { title: "t" }, importJira: { issueKeys: ["A-1"] }, retryWriteback: { ticketId: "t" },
       setRule: { rule: "adjacent" }, raiseHand: { raised: true }, nudge: {}, chat: { text: "hi" }, react: { messageId: "m", emoji: "👍" }, leave: {}, ping: {},
       setModerator: { participantId: "p", moderator: true }, jira: { reqId: "r1", op: "searchBoards", args: ["BMG"] },
+      stream: { kind: "end" }, cursor: { spot: null },
     };
     expect(Object.keys(samples).sort()).toEqual([...CLIENT_MESSAGE_TYPES].sort());
     for (const type of CLIENT_MESSAGE_TYPES) expect(() => p({ type, ...(samples[type] as object) }), type).not.toThrow();

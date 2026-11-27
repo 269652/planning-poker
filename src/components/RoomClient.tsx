@@ -116,6 +116,8 @@ export default function RoomClient() {
       retryHelper={conn.retryHelper}
       nudged={conn.nudged}
       images={conn.images}
+      streams={conn.streams}
+      presence={conn.presence}
     />
   );
 }

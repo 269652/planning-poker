@@ -14,6 +14,11 @@ import { flashTitle, playChime } from "@/ui/chime";
 import { sceneEventsFor } from "@/scenes/events";
 import { firstTryUnanimous } from "@/ui/celebrate";
 import Fireworks from "./Fireworks";
+import StreamViewer from "./StreamViewer";
+import type { StreamStore } from "@/ui/streamStore";
+import type { Spot } from "@/ui/ghosts";
+import type { PresenceStore } from "@/ui/presence";
+import RoomCursors from "./RoomCursors";
 import SettingsMenu from "./SettingsMenu";
 import ParticipantsPanel from "./ParticipantsPanel";
 import SideTabs from "./SideTabs";
@@ -35,6 +40,10 @@ interface Props {
   retryHelper: () => void;
   nudged: { from: string; id: number } | null;
   images: Record<string, string>;
+  /** What a host/PM streams from their import dialog. */
+  streams: StreamStore;
+  /** Everyone's mouse in the room. */
+  presence: PresenceStore;
 }
 
 const PEER_LABEL: Record<HostState, { text: string; tone: string; title: string }> = {
@@ -44,7 +53,7 @@ const PEER_LABEL: Record<HostState, { text: string; tone: string; title: string 
   offline: { text: "Reconnecting…", tone: "bad", title: "Lost the connection to the relay; reconnecting. Guests re-join automatically." },
 };
 
-export default function Board({ view, status, error, dismissError, send, shareUrl, hosting, hostPeer, helper, jira, retryHelper, nudged, images }: Props) {
+export default function Board({ view, status, error, dismissError, send, shareUrl, hosting, hostPeer, helper, jira, retryHelper, nudged, images, streams, presence }: Props) {
   const [importing, setImporting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [toasts, setToasts] = useState<(Toast & { n: number })[]>([]);
@@ -94,6 +103,8 @@ export default function Board({ view, status, error, dismissError, send, shareUr
   }, [error, dismissError, push]);
 
   const onImport = useCallback(() => setImporting(true), []);
+  // Watching a stream: your cursor goes to the others too (they see it faded).
+  const sendMyPointer = useCallback((spot: Spot) => send({ type: "stream", kind: "pointer", pointer: { ...spot, scroll: 0 } }), [send]);
   const closeImport = useCallback(() => setImporting(false), []);
 
   return (
@@ -170,8 +181,13 @@ export default function Board({ view, status, error, dismissError, send, shareUr
           existingKeys={view.tickets.map((t) => t.key).filter(Boolean) as string[]}
           onClose={closeImport}
           onImport={(keys) => { send({ type: "importJira", issueKeys: keys }); setImporting(false); }}
+          onStream={canModerate ? (p) => send({ type: "stream", ...p }) : undefined}
+          streams={streams}
         />
       )}
+      {/* Someone else streaming their import list (hidden while you browse Jira yourself). */}
+      {!importing && <StreamViewer store={streams} onPointer={sendMyPointer} />}
+      <RoomCursors presence={presence} send={send} view={view} />
     </div>
   );
 }

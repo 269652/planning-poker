@@ -255,6 +255,11 @@ export class Room {
     return this.state.hostId === participantId;
   }
 
+  /** A participant's name (cheap: for messages relayed many times a second). */
+  nameOf(participantId: string): string {
+    return this.state.participants.find((p) => p.id === participantId)?.name ?? "Someone";
+  }
+
   /** Host or PM: may run the session. */
   canModerate(participantId: string): boolean {
     return this.isHost(participantId) || !!this.state.participants.find((p) => p.id === participantId)?.moderator;

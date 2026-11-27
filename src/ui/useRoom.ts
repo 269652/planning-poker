@@ -9,6 +9,8 @@ import { RelayJiraGateway } from "@/jira/relayGateway";
 import type { JiraGateway } from "@/jira/types";
 import { hostRoom, joinRoom, type HostState } from "@/net/relay";
 import { relayUrl } from "./site";
+import { StreamStore } from "./streamStore";
+import { PresenceStore } from "./presence";
 import { LocalStore } from "./storage";
 
 export type ConnStatus = "connecting" | "open" | "reconnecting" | "host-offline";
@@ -36,6 +38,10 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
   const [nudged, setNudged] = useState<{ from: string; id: number } | null>(null);
   /** Chat images received so far (id → data URL). */
   const [images, setImages] = useState<Record<string, string>>({});
+  /** What a host/PM is streaming from their import dialog (one store per hook instance). */
+  const [streams] = useState(() => new StreamStore());
+  /** Everyone's mouse in the room. */
+  const [presence] = useState(() => new PresenceStore());
   const sendRef = useRef<(m: ClientMessage) => void>(() => {});
   const probeRef = useRef<() => void>(() => {});
   const errId = useRef(0);
@@ -51,6 +57,8 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
     let isPm = false;
     const deliver = (m: ServerMessage) => {
       if (relayJira?.receive(m)) return;
+      if (streams.receive(m)) return;
+      if (presence.receive(m)) return;
       if (m.type === "welcome") { store.setToken(roomId, m.token); setToken(m.token); }
       else if (m.type === "state") {
         gotView = true;
@@ -155,16 +163,16 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
     window.addEventListener("pageshow", back);
     return () => {
       clearInterval(heartbeat);
-      relayJira?.dispose(); setJira(null);
+      relayJira?.dispose(); setJira(null); streams.clear();
       window.removeEventListener("pagehide", bye);
       window.removeEventListener("pageshow", back);
       guest.stop(); sendRef.current = () => {};
     };
-  }, [roomId, name, role, enabled, hosting]);
+  }, [roomId, name, role, enabled, hosting, streams, presence]);
 
   const send = useCallback((m: ClientMessage) => sendRef.current(m), []);
   const dismissError = useCallback(() => setError(null), []);
   const retryHelper = useCallback(() => { setHelper({ state: "checking" }); probeRef.current(); }, []);
 
-  return { view, status, error, fatal, token, send, dismissError, hostPeer, helper, jira, retryHelper, nudged, images };
+  return { view, status, error, fatal, token, send, dismissError, hostPeer, helper, jira, retryHelper, nudged, images, streams, presence };
 }

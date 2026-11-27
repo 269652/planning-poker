@@ -51,7 +51,10 @@ export class RelayJiraGateway implements JiraGateway {
   listIssues(boardId: number, opts: ListIssuesOptions = {}): Promise<JiraIssue[]> {
     return this.call("listIssues", [boardId, { ...opts } as Record<string, unknown>]);
   }
-  // The import itself goes through `importJira` (the host fetches the issues); PMs never write.
-  getIssues(): Promise<JiraIssue[]> { return Promise.reject(new Error("Not available to PMs: import goes through the host")); }
+  /** For opening rows (descriptions shortened); the import itself goes through `importJira`. */
+  async getIssues(keys: string[]): Promise<JiraIssue[]> {
+    const found = await Promise.all(keys.slice(0, 5).map((k) => this.call<JiraIssue | null>("getIssue", [k])));
+    return found.filter((i): i is JiraIssue => !!i);
+  }
   writeEstimate(): Promise<void> { return Promise.reject(new Error("Only the host writes to Jira")); }
 }

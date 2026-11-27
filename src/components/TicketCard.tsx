@@ -45,6 +45,13 @@ function BlockView({ b }: { b: Block }) {
   }
 }
 
+/** A Jira description rendered like on the ticket card (used by expanded rows in the import list). */
+export function JiraDescription({ text }: { text: string }) {
+  const blocks = useMemo(() => parseJiraMarkup(text), [text]);
+  if (!text.trim()) return <p className="muted small">No description.</p>;
+  return <div className="md">{blocks.map((b, i) => <BlockView key={i} b={b} />)}</div>;
+}
+
 const TYPE_TONE: Record<string, string> = { bug: "bug", story: "story", task: "task", "sub-task": "task", subtask: "task", epic: "epic", spike: "spike" };
 
 /** The ticket under estimation, styled like a Jira issue so the whole team reads the same thing. */
