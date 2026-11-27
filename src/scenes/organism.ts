@@ -10,7 +10,7 @@ const HAIR_TEX = 320; // 102,400 agents of the finer layers
 // and then a big cell splits.
 // The last rows are feelers (~15,000): tendrils that reach out from the membranes, touch, and retract.
 const FEELER_ROWS = 0.85;
-const LAYER_GLSL = /* glsl */ `const float L1_ROWS = 0.32; const float FEELER_ROWS = ${FEELER_ROWS.toFixed(2)}; const float DIVIDER_SHARE = 0.004;`;
+const LAYER_GLSL = /* glsl */ `const float L1_ROWS = 0.32; const float FEELER_ROWS = ${FEELER_ROWS.toFixed(2)}; const float DIVIDER_SHARE = 0.005;`;
 
 const QUAD_VERT = /* glsl */ `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
 const HASH = /* glsl */ `float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }`;
@@ -108,23 +108,26 @@ export class Organism {
     this.agentMat = new THREE.ShaderMaterial({
       uniforms: {
         ...pulseUniforms(),
-        tAgents: { value: initTex }, tTrail: { value: null }, tField: { value: this.fieldTex },
+        tAgents: { value: initTex }, tTrail: { value: null }, tFine: { value: null }, tField: { value: this.fieldTex },
         uSim: { value: new THREE.Vector2(1, 1) }, uTime: { value: 0 },
         uSensorAngle: { value: 0.6 }, uSensorDist: { value: 10 }, uTurn: { value: 0.4 }, uSpeed: { value: 1 }, uWander: { value: 0.1 },
         uPointer: { value: new THREE.Vector2(0.5, 0.5) }, uPointerOn: { value: 0 }, uShift: { value: new THREE.Vector2() },
         uFood: { value: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()] }, uRespawn: { value: 0.0015 },
+        uRemodel: { value: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()] },
       },
       vertexShader: QUAD_VERT,
       fragmentShader: /* glsl */ `
-        uniform sampler2D tAgents, tTrail, tField;
+        uniform sampler2D tAgents, tTrail, tFine, tField;
         uniform vec2 uSim, uPointer, uShift;
-        uniform vec3 uFood[3];
+        uniform vec3 uFood[3], uRemodel[3];
         uniform float uTime, uSensorAngle, uSensorDist, uTurn, uSpeed, uWander, uPointerOn, uRespawn;
         varying vec2 vUv;
         ${PULSE_GLSL}
         ${HASH}
+        // Local sense distance (set per agent in main): it sets the local cell size.
+        float gSense = 10.0;
         float sense(vec2 pos, float a) {
-          vec2 p = pos + vec2(cos(a), sin(a)) * uSensorDist / uSim;
+          vec2 p = pos + vec2(cos(a), sin(a)) * gSense / uSim;
           vec4 f = texture2D(tField, p);
           vec2 asp = vec2(uSim.x / uSim.y, 1.0);
           vec2 d = (p - uPointer) * asp;
@@ -132,10 +135,18 @@ export class Organism {
           // The cursor pulls from across the screen, so the cells and dividers stretch towards it.
           // (No strong feeding right at it: that piled them into thick cables; the deposit near
           // the cursor is thinned too, see depositMat.)
-          float s = texture2D(tTrail, p).r + f.g * 1.6 - f.r * 6.0
+          // Saturating smell: beyond a normal wall's strength, more trail barely attracts more. Raw
+          // trail let thick walls win ever more threads and starve the thin ones (the foam coarsened
+          // into ever bigger cells); this keeps the honeycomb at its size.
+          float s = (1.0 - exp(-texture2D(tTrail, p).r * 4.0)) * 3.0 + f.g * 1.6 - f.r * 6.0
                   + uPointerOn * (0.9 * exp(-dist * 2.6) + 0.5 * exp(-dist * dist * 120.0));
           // Wandering nutrient spots: the network keeps growing new branches towards them.
           for (int i = 0; i < 3; i++) { vec2 df = (p - uFood[i].xy) * asp; s += uFood[i].z * exp(-dot(df, df) * 28.0); }
+          // Promotion: the walls of the medium cells (layer 1) draw the veins too. Inside a big cell,
+          // far from its walls, they dominate — threads that wander in follow them, reinforce them,
+          // and they become real walls: the big cell divides along its smaller cells. Near existing
+          // walls those win, so the comb stays. This balances the foam's natural coarsening.
+          s += texture2D(tFine, p).r * 1.1;
           return s;
         }
         void main() {
@@ -152,11 +163,24 @@ export class Organism {
             pos = vec2(hash(vUv * 2.3 + uTime * 1.1), hash(vUv * 4.7 - uTime * 0.9));
             ang = rnd * 6.2831853;
           }
-          float F = sense(pos, ang), L = sense(pos, ang + uSensorAngle), R = sense(pos, ang - uSensorAngle);
+          // Never settling: the cell size drifts across the tissue in slow, overlapping waves.
+          // Where it grows, neighbouring cells merge; where it shrinks, cells divide — always
+          // somewhere, never everywhere at once.
+          float tide = sin(pos.x * 5.1 + uTime * 0.071) * sin(pos.y * 4.3 - uTime * 0.053)
+                     + 0.6 * sin((pos.x + pos.y) * 7.7 + uTime * 0.113)
+                     + 0.4 * sin(pos.x * 11.0 - pos.y * 9.0 - uTime * 0.17);
+          gSense = uSensorDist * (1.0 + 0.24 * tide);
+          float sa = uSensorAngle * (1.0 + 0.06 * tide);
+          float F = sense(pos, ang), L = sense(pos, ang + sa), R = sense(pos, ang - sa);
           if (F < L && F < R) ang += (rnd - 0.5) * 2.0 * uTurn;
           else if (L > R) ang += uTurn * (0.6 + 0.4 * rnd);
           else if (R > L) ang -= uTurn * (0.6 + 0.4 * rnd);
           ang += (rnd - 0.5) * uWander;
+          // Inside a remodelling zone the agents lose their way: the walls there dissolve (cells
+          // merge), and re-form in a new arrangement once the zone has passed (cells divide).
+          float zone = 0.0;
+          for (int i = 0; i < 3; i++) { vec2 dr = (pos - uRemodel[i].xy) * vec2(uSim.x / uSim.y, 1.0); zone += uRemodel[i].z * exp(-dot(dr, dr) * 45.0); }
+          ang += (hash(vUv * 57.0 + fract(uTime * 0.29) * 13.0) - 0.5) * 0.9 * clamp(zone, 0.0, 1.0);
           // Startle: agents caught by a passing ring turn away from its centre.
           for (int i = 0; i < ${8}; i++) {
             vec4 pu = uPulses[i];
@@ -182,13 +206,15 @@ export class Organism {
         uSim: { value: new THREE.Vector2(1, 1) }, uDecay: { value: 0.94 },
         uPointer: { value: new THREE.Vector2(0.5, 0.5) }, uPointerOn: { value: 0 }, uShift: { value: new THREE.Vector2() },
         uFood: { value: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()] },
+        uRemodel: { value: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()] },
+        uSeedR: { value: 24 },
       },
       vertexShader: QUAD_VERT,
       fragmentShader: /* glsl */ `
         uniform sampler2D tTrail, tField;
         uniform vec2 uSim, uPointer, uShift;
-        uniform vec3 uFood[3];
-        uniform float uDecay, uPointerOn;
+        uniform vec3 uFood[3], uRemodel[3];
+        uniform float uDecay, uPointerOn, uSeedR;
         varying vec2 vUv;
         ${PULSE_GLSL}
         void main() {
@@ -212,7 +238,22 @@ export class Organism {
           // Nutrient spots seed a little trail: nuclei that new cells grow around.
           float food = 0.0;
           for (int i = 0; i < 3; i++) { vec2 df = (vUv - uFood[i].xy) * vec2(uSim.x / uSim.y, 1.0); food += uFood[i].z * exp(-dot(df, df) * 300.0); }
-          float trail = blur.r * uDecay + f.g * 0.004 + ring * 0.05 + near * 0.01 + food * 0.03;
+          // Remodelling zones: wherever one passes, walls fade faster, so the cells there merge;
+          // once it has moved on, new walls grow back in a different arrangement — they divide again.
+          float remodel = 0.0;
+          for (int i = 0; i < 3; i++) { vec2 dr = (vUv - uRemodel[i].xy) * vec2(uSim.x / uSim.y, 1.0); remodel += uRemodel[i].z * exp(-dot(dr, dr) * 45.0); }
+          float decay = uDecay * (1.0 - 0.05 * clamp(remodel, 0.0, 1.0));
+          // Cell division: deep inside an oversized cell (no wall anywhere within ~1.2 cell radii)
+          // a nucleus of trail slowly forms; threads find it and grow a new wall around it, and the
+          // cell splits. Normal-sized cells always have walls in reach and are left alone. Without
+          // this the foam coarsens into ever fewer, bigger cells.
+          float wall = c.r;
+          for (int i = 0; i < 8; i++) {
+            float a = float(i) * 0.7853982;
+            wall = max(wall, texture2D(tTrail, src + vec2(cos(a), sin(a)) * uSeedR * px).r);
+          }
+          float seed = (1.0 - smoothstep(0.15, 0.4, wall)) * (1.0 - f.r) * 0.04;
+          float trail = blur.r * decay + f.g * 0.004 + ring * 0.05 + near * 0.01 + food * 0.03 + seed;
           float warm = blur.g * 0.965 + ring * 0.25 + near * 0.012;
           // Hue memory: what coloured the last pulse that passed here.
           float hue = blur.b;
@@ -238,11 +279,11 @@ export class Organism {
     pts.setAttribute("aRef", new THREE.BufferAttribute(refs, 2));
     this.depositMat = new THREE.ShaderMaterial({
       uniforms: {
-        tAgents: { value: null }, uDeposit: { value: 0.08 },
+        tAgents: { value: null }, tPrev: { value: null }, uDeposit: { value: 0.08 },
         uPointer: { value: new THREE.Vector2(0.5, 0.5) }, uPointerOn: { value: 0 }, uAspect: { value: 1 },
       },
       vertexShader: /* glsl */ `
-        uniform sampler2D tAgents;
+        uniform sampler2D tAgents, tPrev;
         uniform vec2 uPointer;
         uniform float uPointerOn, uAspect, uDeposit;
         attribute vec2 aRef;
@@ -251,7 +292,9 @@ export class Organism {
           vec4 a = texture2D(tAgents, aRef);
           // Near the cursor the veins stretch rather than thicken: lay less trail there.
           vec2 d = (a.xy - uPointer) * vec2(uAspect, 1.0);
-          vAmt = uDeposit * (1.0 - 0.65 * uPointerOn * exp(-dot(d, d) * 40.0));
+          // Crowded threads lay less: walls can't thicken without limit (and win over thinner ones).
+          float crowd = 1.0 / (1.0 + texture2D(tPrev, a.xy).r * 1.5);
+          vAmt = uDeposit * crowd * (1.0 - 0.65 * uPointerOn * exp(-dot(d, d) * 40.0));
           gl_Position = vec4(a.xy * 2.0 - 1.0, 0.0, 1.0);
           gl_PointSize = 1.0;
         }`,
@@ -318,6 +361,7 @@ export class Organism {
           vec2 pos = h.xy + uShift;
           float ang = h.z, age = h.w;
           if (age >= 1.0 || pos.x < 0.0 || pos.x > 1.0 || pos.y < 0.0 || pos.y > 1.0) {
+            // Curious: feelers also sprout on their own and probe the space, more so near the cursor.
             float chance = (0.0015 + 0.03 * uPointerOn) * (1.0 - uJolt);
             if (rnd >= chance) return vec4(h.xy, h.z, 1.0);
             // Of a few membrane spots, take the one nearest the cursor or an edge…
@@ -391,10 +435,18 @@ export class Organism {
           float life = l1 ? 0.002 + 0.003 * seed : 0.004 + 0.004 * seed;
           bool divider = l1 && seed < DIVIDER_SHARE;
           if (divider) {
-            // A divider: grows dead straight across its cell, laying real trail, until it meets the
-            // opposite wall. The veins then adopt it and the cell splits in two.
-            life = 0.004;
-            if (age > 0.08 && texture2D(tTrail, pos).r > 0.9) life = 1.0;
+            // A divider: grows dead straight across its cell, laying real trail, and shuttles back and
+            // forth between the two opposite walls for ~10 s, reinforcing the line every pass, until
+            // the veins adopt it as a new wall and the cell has split in two. (One pass faded before
+            // anything noticed it.) It turns where it meets a wall: there the trail runs across its way
+            // (left and right of it), while its own line only runs along it.
+            life = 0.0026;
+            vec2 side = vec2(-sin(ang), cos(ang)) * 5.0 / uSim;
+            float here = texture2D(tTrail, pos).r;
+            float across = min(texture2D(tTrail, pos + side).r, texture2D(tTrail, pos - side).r);
+            // …and only while heading into it (once turned, the way ahead is the open cell again).
+            float ahead = texture2D(tTrail, pos + vec2(cos(ang), sin(ang)) * 3.0 / uSim).r;
+            if (age > 0.02 && here > 0.9 && across > 0.7 && ahead > here * 0.8) ang += 3.14159265;
           } else {
             // The veins' rules at a smaller scale: follow its own trail close by (the sense distance
             // sets the cell size), lean a little towards the parent's walls so its cells tile into
@@ -447,7 +499,7 @@ export class Organism {
           float amt = 0.09 * taper * (1.0 + texture2D(tField, h.xy).g * 0.6);
           bool fl = aRef.y >= FEELER_ROWS;
           if (fl) amt = 0.16 * smoothstep(0.0, 0.04, h.w) * (1.0 - smoothstep(0.96, 1.0, h.w));
-          if (uWalls > 0.5) vOut = vec4(divider ? 0.45 : 0.0, 0.0, 0.0, 0.0);
+          if (uWalls > 0.5) vOut = vec4(divider ? 0.75 : 0.0, 0.0, 0.0, 0.0);
           else vOut = fl ? vec4(0.0, 0.0, amt, 0.0) : l1 ? vec4(divider ? 0.12 : amt, 0.0, 0.0, 0.0) : vec4(0.0, amt, 0.0, 0.0);
           bool skip = uWalls > 0.5 && !divider;
           gl_Position = skip ? vec4(2.0, 2.0, 0.0, 1.0) : vec4(h.xy * 2.0 - 1.0, 0.0, 1.0);
@@ -566,7 +618,7 @@ export class Organism {
           light = mix(light, hue2rgb(fract(hueA + 0.12)) * 0.5, nucleus * 0.4);
           light = mix(light, ink * 0.9, feel * 0.5);
           light -= tint * 0.08 + ring * 0.015;
-          light = mix(LIGHT_BG, light, PRESENCE * 0.75);
+          light = mix(LIGHT_BG, light, PRESENCE * 0.95);
 
           col = mix(col, light, uLight);
           col += (hash(vUv * 900.0 + uTime) - 0.5) * 0.006;
@@ -650,17 +702,30 @@ export class Organism {
     const food = this.agentMat.uniforms.uFood.value as THREE.Vector3[];
     for (let i = 0; i < 3; i++) {
       food[i].set(
-        0.5 + 0.44 * Math.sin(t * (0.031 + i * 0.011) + i * 2.1),
-        0.5 + 0.42 * Math.sin(t * (0.023 + i * 0.007) + i * 1.3 + 0.7),
-        Math.max(0, Math.sin(t * (0.05 + i * 0.013) + i * 2.4)) * 0.9,
+        0.5 + 0.44 * Math.sin(t * (0.055 + i * 0.017) + i * 2.1),
+        0.5 + 0.42 * Math.sin(t * (0.041 + i * 0.013) + i * 1.3 + 0.7),
+        Math.max(0, Math.sin(t * (0.08 + i * 0.021) + i * 2.4)) * 0.8,
       );
     }
     (this.diffuseMat.uniforms.uFood.value as THREE.Vector3[]).forEach((v, i) => v.copy(food[i]));
-    this.agentMat.uniforms.uRespawn.value = 0.0006 + Math.min(s.energy, 1) * 0.0015;
+    // Three remodelling zones drift across the screen (about a minute to cross it) and come and go.
+    const remodel = this.diffuseMat.uniforms.uRemodel.value as THREE.Vector3[];
+    remodel.forEach((v, i) => v.set(
+      0.5 + 0.48 * Math.sin(t * (0.047 + i * 0.019) + i * 4.1),
+      0.5 + 0.46 * Math.cos(t * (0.039 + i * 0.023) + i * 2.7),
+      0.35 + 0.65 * Math.max(0, Math.sin(t * (0.09 + i * 0.03) + i * 1.9)),
+    ));
+    (this.agentMat.uniforms.uRemodel.value as THREE.Vector3[]).forEach((v, i) => v.copy(remodel[i]));
+    // Threads live ~4 s before sprouting anew somewhere: endless renewal is what keeps the foam
+    // from coarsening (the finer layers, which renew all the time, never do).
+    this.agentMat.uniforms.uRespawn.value = 0.004 + Math.min(s.energy, 1) * 0.0015;
     // 1. diffuse + decay + food → trail[1]
     const du = this.diffuseMat.uniforms;
     du.tTrail.value = this.trail[0].texture;
     du.uDecay.value = p.decay;
+    // "Oversized" = no wall within ~1.3 sense distances; the nucleus then starts just beyond the
+    // walls' threads' reach and grows towards them, so they find it.
+    du.uSeedR.value = p.sensorDist * 1.3;
     du.uPointer.value.copy(pointer);
     du.uPointerOn.value = this.pointerOn;
     syncPulses(du as never, s, aspect);
@@ -669,6 +734,7 @@ export class Organism {
     r.render(this.quadScene, this.cam);
     // 2. deposit: every agent leaves a drop
     this.depositMat.uniforms.tAgents.value = this.agents[0].texture;
+    this.depositMat.uniforms.tPrev.value = this.trail[0].texture; // last step's trail (not the target)
     this.depositMat.uniforms.uDeposit.value = p.deposit;
     this.depositMat.uniforms.uPointer.value.copy(pointer);
     this.depositMat.uniforms.uPointerOn.value = this.pointerOn;
@@ -690,6 +756,7 @@ export class Organism {
     const au = this.agentMat.uniforms;
     au.tAgents.value = this.agents[0].texture;
     au.tTrail.value = this.trail[1].texture;
+    au.tFine.value = fine[1].texture;
     au.uTime.value = t;
     au.uSensorAngle.value = p.sensorAngle;
     au.uSensorDist.value = p.sensorDist;

@@ -35,13 +35,15 @@ export function organismParams(t: number, mood: { harmony: number; turbulence: n
   // A slow, gentle pulse in how far and wide it senses: the cells breathe and now and then split or
   // merge, but stay an ordered, tissue-like foam.
   const pulse = Math.sin(t * 0.42) * 0.6 + Math.sin(t * 0.17 + 1.3) * 0.4;
+  // Agreement (h) only nudges it towards calm, flowing veins: strong settings (slow-fading trails,
+  // no wandering, huge cells) froze the tissue for as long as the agreement lasted.
   return {
-    sensorAngle: clamp("sensorAngle", (0.62 + 0.28 * d(1, 0.02)) * (1 - 0.4 * h) * (1 + 0.08 * pulse) + 0.2 * u),
-    sensorDist: clamp("sensorDist", 10 + 6 * d(2, 0.017) + 1.2 * pulse + 6 * h - 3 * u),
-    turn: clamp("turn", 0.38 + 0.12 * d(3, 0.023) + 0.35 * u - 0.1 * h),
+    sensorAngle: clamp("sensorAngle", (0.62 + 0.28 * d(1, 0.02)) * (1 - 0.15 * h) * (1 + 0.08 * pulse) + 0.2 * u),
+    sensorDist: clamp("sensorDist", 10 + 3 * d(2, 0.017) + 1.2 * pulse + 2 * h - 3 * u),
+    turn: clamp("turn", 0.38 + 0.12 * d(3, 0.023) + 0.35 * u - 0.04 * h),
     speed: clamp("speed", 1.05 + 0.25 * d(4, 0.019) + 0.6 * Math.min(e, 1.5) + 0.3 * u),
-    wander: clamp("wander", 0.12 + 0.08 * d(5, 0.029) + 0.5 * u - 0.12 * h),
-    decay: clamp("decay", 0.935 + 0.02 * d(6, 0.013) + 0.04 * h - 0.04 * u),
+    wander: clamp("wander", 0.12 + 0.05 * d(5, 0.029) + 0.5 * u - 0.04 * h),
+    decay: clamp("decay", 0.93 + 0.015 * d(6, 0.013) + 0.01 * h - 0.04 * u),
     deposit: clamp("deposit", 0.055 + 0.02 * d(7, 0.021)),
   };
 }

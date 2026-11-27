@@ -45,6 +45,15 @@ describe("organism moods", () => {
     expect(turbulent.turn).toBeGreaterThan(base.turn);
   });
 
+  it("agreement only nudges it: the tissue never freezes (trails keep fading, threads keep wandering)", () => {
+    for (let t = 0; t < 600; t += 7) {
+      const p = organismParams(t, { harmony: 1, turbulence: 0, energy: 0 });
+      expect(p.decay).toBeLessThanOrEqual(0.955);
+      expect(p.wander).toBeGreaterThan(0.02);
+      expect(p.sensorDist).toBeLessThanOrEqual(19);
+    }
+  });
+
   it("activity makes it move faster", () => {
     expect(organismParams(50, { ...calm, energy: 1 }).speed).toBeGreaterThan(organismParams(50, calm).speed);
   });

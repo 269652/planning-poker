@@ -167,13 +167,21 @@ export function startLivingBackground(canvas: HTMLCanvasElement, opts: { reduced
 
   // ---- life ---------------------------------------------------------------------------------------
   let frames = 0;
+  // Debug only (`?debug&tscale=20`): the slow drifts (remodelling zones, food, tides) run faster
+  // than the agents, to check in a short headless run that the tissue keeps changing.
+  const timeLapse = opts.debug ? Math.max(1, Number(new URLSearchParams(window.location.search).get("tscale")) || 1) : 1;
+  // Debug only (`?debug&bare`): hide the UI so the organism fills the screen (long-run checks).
+  if (opts.debug && new URLSearchParams(window.location.search).has("bare")) {
+    for (const el of Array.from(document.body.children) as HTMLElement[]) if (!el.contains(canvas)) el.style.display = "none";
+    fieldDirty = true;
+  }
   const frame = (dt: number) => {
     clock += dt;
     syncScroll();
     s.update(dt);
     if (fieldDirty || clock - lastField > 1) drawField();
     const p = organismParams(clock, s);
-    for (let i = 0; i < STEPS_PER_FRAME; i++) organism.step(clock, p, s);
+    for (let i = 0; i < STEPS_PER_FRAME; i++) organism.step(clock * timeLapse, p, s);
     organism.draw(clock, s, light, width / height, calm);
     frames++;
     if (opts.debug && (frames === 1 || frames % 15 === 0)) {
@@ -189,6 +197,8 @@ export function startLivingBackground(canvas: HTMLCanvasElement, opts: { reduced
         + ` box=${Math.round(b.width)}x${Math.round(b.height)}@${Math.round(b.left)},${Math.round(b.top)} opacity=${cs.opacity} vis=${cs.visibility}`
         + ` top=${top?.tagName}.${(top as HTMLElement)?.className || ""} buf=${canvas.width}x${canvas.height}`;
       if (frames % 15 === 0) canvas.dataset.snapshot = canvas.toDataURL("image/jpeg", 0.8);
+      // A second, earlier frame of the same run (30 s in), to compare how the tissue changes.
+      if (frames === 300) canvas.dataset.snapshotEarly = canvas.toDataURL("image/jpeg", 0.8);
     }
   };
 
