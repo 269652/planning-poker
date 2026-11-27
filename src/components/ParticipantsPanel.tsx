@@ -11,6 +11,7 @@ export default function ParticipantsPanel({ view, voting, send }: {
 }) {
   const voters = view.participants.filter((p) => p.role === "voter" && p.connected);
   const voted = voters.filter((p) => p.hasVoted).length;
+  const left = view.participants.filter((p) => !p.connected).length;
   const waiting = voting ? voters.filter((p) => !p.hasVoted && p.id !== view.you) : [];
   const [cooldownUntil, setCooldownUntil] = useState(0);
   const [, rerender] = useState(0);
@@ -43,7 +44,7 @@ export default function ParticipantsPanel({ view, voting, send }: {
         )}
       </div>
       <ul className="people">
-        {view.participants.map((p) => {
+        {view.participants.filter((p) => p.connected).map((p) => {
           const canPing = waiting.some((w) => w.id === p.id);
           return (
             <li key={p.id} data-participant={p.id} className={`${p.connected ? "" : "offline"} ${p.handRaised ? "hand-up" : ""}`}>
@@ -70,6 +71,7 @@ export default function ParticipantsPanel({ view, voting, send }: {
           );
         })}
       </ul>
+      {left > 0 && <p className="muted small left-note">{left === 1 ? "1 person has left" : `${left} people have left`} — back as soon as they open the room again.</p>}
     </section>
   );
 }

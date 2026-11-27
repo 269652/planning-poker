@@ -72,10 +72,11 @@ export default function RoundPanel({ view, ticket, next, remaining, isHost, send
           {!estimated && <span className="muted small">{revealed ? "Votes revealed" : `${votedCount}/${voters.length} voted`}</span>}
         </div>
         <div className="table">
-          {view.participants.filter((p) => p.role === "voter").map((p) => {
+          {/* People who left aren't at the table — except, once revealed, with a card they played. */}
+          {view.participants.filter((p) => p.role === "voter" && (p.connected || (revealed && round?.voted.includes(p.id)))).map((p) => {
             const vote = revealed ? round.votes?.[p.id] : undefined;
             const has = round?.voted.includes(p.id);
-            // Same card ⇒ same procedural back (new every round); the value stays hidden until reveal.
+            // Every voter's own random back this round: shows who has voted, not what or with whom.
             const patternId = round?.patterns?.[p.id];
             const back = patternId ? cardPattern(patternId) : null;
             const style = back

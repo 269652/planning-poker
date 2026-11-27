@@ -136,10 +136,15 @@ The host's browser builds a **personalised view** for each participant. Until re
 (`voted`) and the viewer's own card (`myVote`); `votes` and `stats` are `null`. Hidden votes therefore never leave the
 host's browser. Participant tokens are never part of a view. The Jira comment lists the vote distribution per round **without names**.
 
-**Card backs.** On purpose, the table shows *who picked the same card* before the reveal: when a card value is first played
-in a round, the host gives it a fresh **random** pattern id, and every vote shows the procedural back drawn from its id
-(`patterns` in the view). Equal cards ⇒ equal backs; the id carries no information about the value, and every round gets new ids.
-You know your own card, so you can tell who agrees with you — nobody can tell which value another group chose.
+**Card backs.** Before the reveal the table shows *who has voted* — and nothing more. Each voter gets their own
+**random** pattern id for the round on their first vote (kept if they change their card), and their face-down card shows
+the procedural back drawn from it (`patterns` in the view). Backs are different for everyone, so they reveal neither the
+value nor who picked the same card; every round gets new ids. (Rounds saved by older versions keyed backs by card value;
+those are not shown, as they would give equal cards away.)
+
+**Presence.** Guests send a heartbeat (`ping`) every 15 s and a `leave` when their tab closes; the host also marks
+anyone whose heartbeat stops for 45 s as gone. People who left are hidden from the table and the people list and don't
+count towards "x/y voted"; any later message from them (reload, phone waking up) brings them back, vote included.
 
 **Raised hands.** Anyone can raise or lower their hand (`raiseHand`) to ask to speak before the team moves on; it shows
 next to their name and at their seat. Hands are lowered automatically when a new round starts or another ticket is selected.

@@ -368,7 +368,7 @@ describe("Room: estimating one ticket after another", () => {
   });
 });
 
-describe("Room: card patterns (who picked the same card is visible, not which card)", () => {
+describe("Room: card backs (show who has voted — not what, nor who picked the same card)", () => {
   let room: Room;
   let host: string, bob: string, cara: string, obs: string;
   beforeEach(() => {
@@ -381,12 +381,12 @@ describe("Room: card patterns (who picked the same card is visible, not which ca
   });
   const patterns = (pid = obs) => room.view(pid).tickets[0].rounds.at(-1)!.patterns;
 
-  it("equal cards share a pattern id, different cards get different ones, before reveal", () => {
+  it("every voter has their own back — equal cards don't share one", () => {
     room.vote(host, 5); room.vote(bob, 5); room.vote(cara, 8);
     const p = patterns();
     expect(Object.keys(p).sort()).toEqual([bob, cara, host].sort());
-    expect(p[host]).toBe(p[bob]);
-    expect(p[cara]).not.toBe(p[host]);
+    expect(new Set(Object.values(p)).size).toBe(3);
+    expect(p[host]).not.toBe(p[bob]);
     expect(patterns(bob)).toEqual(p);
   });
 
@@ -399,15 +399,17 @@ describe("Room: card patterns (who picked the same card is visible, not which ca
     expect(JSON.stringify(room.view(obs).tickets[0].rounds[0].votes)).toBe("null");
   });
 
-  it("every round gets new patterns, and changing a vote changes your pattern", () => {
+  it("changing your card keeps your back (it says nothing); every round gets new backs", () => {
     room.vote(host, 5); room.vote(bob, 8);
-    const first = patterns()[host];
+    const bobs = patterns()[bob];
     room.vote(bob, 5);
-    expect(patterns()[bob]).toBe(first);
+    expect(patterns()[bob]).toBe(bobs);
+    expect(patterns()[bob]).not.toBe(patterns()[host]);
+    const hosts = patterns()[host];
     room.reveal(host);
     room.nextRound(host);
     room.vote(host, 5);
-    expect(patterns()[host]).not.toBe(first);
+    expect(patterns()[host]).not.toBe(hosts);
   });
 
   it("rooms saved before patterns existed still show votes without patterns", () => {
@@ -418,8 +420,33 @@ describe("Room: card patterns (who picked the same card is visible, not which ca
     expect(back.view(host).tickets[0].rounds[0].patterns).toEqual({});
     back.vote(bob, 5);
     const p = back.view(host).tickets[0].rounds[0].patterns;
-    expect(Object.keys(p).sort()).toEqual([bob, host].sort());
-    expect(p[bob]).toBe(p[host]);
+    expect(Object.keys(p)).toEqual([bob]); // host's vote predates patterns: plain back
+  });
+
+  it("rounds saved with per-card backs (older versions) don't give equal cards away", () => {
+    room.vote(host, 5);
+    const state = JSON.parse(JSON.stringify(room.snapshot()));
+    state.tickets[0].rounds[0].patternIds = { "5": "old-shared-id" };
+    const back = Room.restore(state);
+    back.vote(bob, 5);
+    const p = back.view(host).tickets[0].rounds[0].patterns;
+    expect(Object.values(p)).not.toContain("old-shared-id");
+  });
+});
+
+describe("Room: leaving and coming back", () => {
+  it("leave/rejoin report changes and lower a raised hand", () => {
+    const room = makeRoom();
+    const host = room.join({ name: "Host" }).participant.id;
+    const bob = room.join({ name: "Bob" }).participant.id;
+    room.raiseHand(bob, true);
+    expect(room.leave(bob)).toBe(true);
+    expect(room.leave(bob)).toBe(false);
+    const me = room.view(host).participants.find((p) => p.id === bob)!;
+    expect(me.connected).toBe(false);
+    expect(me.handRaised).toBe(false);
+    expect(room.rejoin(bob)).toBe(true);
+    expect(room.rejoin(bob)).toBe(false);
   });
 });
 

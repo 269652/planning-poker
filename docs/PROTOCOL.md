@@ -67,7 +67,8 @@ Messages are JSON objects with a `type`. The first message must be `join`.
 | `chat` | `text` (1–500 chars) | anyone | Posts a message to the room chat. The room keeps the latest 100 messages, and every `state` carries them in `room.chat` (`id`, `authorId`, `name`, `text`, `at`). At most 5 messages per sender every 5 s (`RATE_LIMITED`). Optional `image`: a PNG/JPEG/WebP/GIF data URL of at most 140,000 characters (the app shrinks pasted images to fit); then `text` may be empty. The message gets an `imageId`, and the image itself travels separately as `image`. Text is a small Markdown dialect (bold, italic, strike, code, links, quotes, lists); Jira keys like `BMG-123` render as ticket mentions. |
 | `react` | `messageId`, `emoji` | anyone | Toggles your reaction on a chat message (`👍 ❤️ 😆 😮 😢 🎉`); shown in `room.chat[].reactions` as emoji → participant ids. |
 | `nudge` | `participantId?` | anyone | Pings connected voters who haven't voted in the open round — everyone, or one participant (who must still have to vote). Each pinged person gets `nudged`; at most one ping per sender every 10 s (`RATE_LIMITED`). |
-| `ping` | – | anyone | Keep-alive; answered with `pong`. |
+| `ping` | – | anyone | Keep-alive and heartbeat; answered with `pong`. A connection that has sent a `ping` and then stays silent for 45 s counts as gone (its participant leaves). The app sends one every 15 s. |
+| `leave` | – | anyone | The tab is closing: the participant leaves right away (`connected: false`; hidden from the table, not counted as "to vote"). Any later message on the connection, or a new `join` with the token, brings them back. |
 
 ### Host → participant
 
@@ -85,8 +86,8 @@ Messages are JSON objects with a `type`. The first message must be `join`.
 Each ticket has its metadata (`key`, `url`, `issueType`, `jiraStatus`, `currentEstimate`), `estimate`, `resolution`,
 `writeback`, `rounds[]` and `convergence`. To keep updates small, only the **current** ticket carries its `description`.
 Each round has `voted` (ids), `myVote`, `patterns` and – only once revealed – `votes` and `stats`. Hidden values are never transmitted.
-`patterns` maps each voter to a **pattern id**: the host assigns a fresh random id per card value per round, so equal cards
-share an id (shown as the same procedural card back) while the id reveals nothing about the card.
+`patterns` maps each voter to a **pattern id**: a fresh random id per voter per round (shown as their procedural card
+back). It reveals neither the card nor who picked the same card.
 
 ### Error codes
 

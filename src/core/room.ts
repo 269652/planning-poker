@@ -54,8 +54,8 @@ export interface Round {
   status: "voting" | "revealed";
   votes: Record<string, Card>;
   /**
-   * Card → random pattern id, created when the card is first played in this round. Lets everyone
-   * see who picked the same card before the reveal without learning which card it is.
+   * Participant id → random pattern id for the back of their card this round (created on their
+   * first vote). Reveals neither the card nor who picked the same card.
    */
   patternIds?: Record<string, string>;
   startedAt: number;
@@ -279,9 +279,21 @@ export class Room {
     return { participant: { ...p }, token: p.token };
   }
 
-  leave(participantId: string): void {
+  /** The participant left (closed the tab, or went silent). Returns whether anything changed. */
+  leave(participantId: string): boolean {
     const p = this.state.participants.find((x) => x.id === participantId);
-    if (p) p.connected = false;
+    if (!p || !p.connected) return false;
+    p.connected = false;
+    p.handRaised = false;
+    return true;
+  }
+
+  /** A participant who had left is back on an existing connection. Returns whether anything changed. */
+  rejoin(participantId: string): boolean {
+    const p = this.state.participants.find((x) => x.id === participantId);
+    if (!p || p.connected) return false;
+    p.connected = true;
+    return true;
   }
 
   setRule(actor: string, rule: AgreementRule): void {
@@ -366,8 +378,10 @@ export class Room {
     const round = this.currentRound();
     if (round.status !== "voting") throw new RoomError("BAD_PHASE", "Votes are revealed; start the next round first");
     round.votes[actor] = card;
+    // Each voter gets their own random back for the round (kept when they change their card), so
+    // the backs on the table show who has voted, but nothing about who picked the same card.
     round.patternIds ??= {};
-    round.patternIds[String(card)] ??= this.newId();
+    round.patternIds[actor] ??= this.newId();
   }
 
   raiseHand(actor: string, raised: boolean): void {
@@ -520,8 +534,10 @@ export class Room {
       rounds: t.rounds.map((r) => {
         const revealed = r.status === "revealed";
         const patterns: Record<string, string> = {};
-        for (const [pid, card] of Object.entries(r.votes)) {
-          const id = r.patternIds?.[String(card)];
+        // Keyed by voter. (Rounds saved by older versions keyed them by card value, which would
+        // reveal equal cards — those are simply not shown.)
+        for (const pid of Object.keys(r.votes)) {
+          const id = r.patternIds?.[pid];
           if (id) patterns[pid] = id;
         }
         return {

@@ -15,7 +15,7 @@ const ISSUE_KEY = /^[A-Z][A-Z0-9_]*-\d+$/i;
 
 export const CLIENT_MESSAGE_TYPES = [
   "join", "vote", "reveal", "nextRound", "nextTicket", "finalize", "reopen", "selectTicket", "removeTicket",
-  "addTicket", "importJira", "retryWriteback", "setRule", "raiseHand", "nudge", "chat", "react", "ping",
+  "addTicket", "importJira", "retryWriteback", "setRule", "raiseHand", "nudge", "chat", "react", "leave", "ping",
 ] as const;
 export const SERVER_MESSAGE_TYPES = ["welcome", "state", "error", "pong", "nudged", "image"] as const;
 
@@ -37,6 +37,8 @@ export type ClientMessage =
   | { type: "nudge"; participantId?: string }
   | { type: "chat"; text: string; image?: string }
   | { type: "react"; messageId: string; emoji: string }
+  /** The tab is closing: leave the room now (a later message on the same connection rejoins). */
+  | { type: "leave" }
   | { type: "ping" };
 
 export type ServerMessage =
@@ -71,7 +73,7 @@ export function parseClientMessage(raw: string): ClientMessage {
     case "vote":
       if (!isCard(m.card)) throw new ProtocolError("Invalid card");
       return { type: "vote", card: m.card };
-    case "reveal": case "nextRound": case "nextTicket": case "ping":
+    case "reveal": case "nextRound": case "nextTicket": case "ping": case "leave":
       return { type: m.type };
     case "finalize":
       if (m.value !== undefined && !isNumericCard(m.value)) throw new ProtocolError("Final estimate must be a numeric card");

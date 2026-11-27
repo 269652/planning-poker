@@ -47,6 +47,65 @@ async function estimate(host: TestPeer, bob: TestPeer, card: 5 | 8) {
   await host.send({ type: "finalize" });
 }
 
+describe("HostEngine: presence (closing the tab leaves the room)", () => {
+  let now = 0;
+  beforeEach(() => {
+    now = 1_000_000;
+    engine = new HostEngine({ room: Room.create({ id: "ROOM2345", name: "Sprint 42" }), jira, now: () => now });
+  });
+  const who = (p: TestPeer) => p.view!.participants.filter((x) => x.connected).map((x) => x.name);
+
+  it("'leave' (tab closing) takes a guest out right away; any later message brings them back", async () => {
+    const host = await join("Host");
+    const bob = await join("Bob");
+    await bob.send({ type: "leave" });
+    expect(who(host)).toEqual(["Host"]);
+    await bob.send({ type: "ping" }); // e.g. the page came back from the back/forward cache
+    expect(who(host)).toEqual(["Host", "Bob"]);
+  });
+
+  it("a reload says goodbye and joins again with the token: same person, vote kept", async () => {
+    const host = await join("Host");
+    await host.send({ type: "addTicket", title: "T" });
+    await host.send({ type: "selectTicket", ticketId: host.view!.tickets[0].id });
+    const bob = await join("Bob");
+    await bob.send({ type: "vote", card: 5 });
+    await bob.send({ type: "leave" });
+    bob.link.close();
+    const again = await join("Bob", { token: bob.token });
+    expect(again.you).toBe(bob.you);
+    expect(who(host)).toEqual(["Host", "Bob"]);
+    expect(host.view!.tickets[0].rounds[0].voted).toContain(bob.you);
+  });
+
+  it("a guest whose heartbeat stops is gone after 45 s; clients without heartbeats are never swept", async () => {
+    const host = await join("Host");
+    const bob = await join("Bob");
+    await bob.send({ type: "ping" }); // sends heartbeats
+    const old = await join("Olga"); // an older client: never pings
+    now += 30_000; engine.sweep();
+    expect(who(host)).toEqual(["Host", "Bob", "Olga"]);
+    await bob.send({ type: "ping" });
+    now += 40_000; engine.sweep();
+    expect(who(host)).toEqual(["Host", "Bob", "Olga"]);
+    now += 10_000; engine.sweep();
+    expect(who(host)).toEqual(["Host", "Olga"]);
+    await bob.send({ type: "vote", card: 3 }).catch(() => {});
+    expect(who(host)).toEqual(["Host", "Bob", "Olga"]);
+    expect(old.view).toBeDefined();
+  });
+
+  it("someone with two tabs stays while one of them is still open", async () => {
+    const host = await join("Host");
+    const bob = await join("Bob");
+    const bob2 = await join("Bob", { token: bob.token });
+    await bob.send({ type: "leave" });
+    expect(who(host)).toEqual(["Host", "Bob"]);
+    await bob2.send({ type: "leave" });
+    expect(who(host)).toEqual(["Host"]);
+  });
+});
+
 describe("HostEngine: connections", () => {
   it("requires join first, rejects other rooms and malformed or oversized input", async () => {
     const p = new TestPeer(engine);

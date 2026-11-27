@@ -17,9 +17,23 @@ export interface HostEngineOptions {
   jira: JiraGateway | null;
   /** Called after every change, so the host can persist the room. */
   onChange?: (room: Room) => void;
+  /** Clock (tests). */
+  now?: () => number;
 }
 
-interface Conn { send: (m: ServerMessage) => void; pid: string | null }
+interface Conn {
+  send: (m: ServerMessage) => void;
+  pid: string | null;
+  /** Last message from this connection (ms). */
+  lastSeen: number;
+  /** The client sends heartbeats (pings), so silence means it's gone. Older clients don't. */
+  heartbeat: boolean;
+  /** The tab said it is closing ("leave"). */
+  away: boolean;
+}
+
+/** A guest that sends heartbeats and stays silent this long has left (closed tab, lost network). */
+export const STALE_MS = 45_000;
 
 /** Chat images the host keeps (the oldest are dropped). */
 export const MAX_IMAGES = 30;
@@ -40,10 +54,33 @@ export class HostEngine {
    */
   private readonly images = new Map<string, string>();
 
+  private readonly now: () => number;
+
   constructor(opts: HostEngineOptions) {
     this.room = opts.room;
     this.jira = opts.jira;
     this.onChange = opts.onChange;
+    this.now = opts.now ?? Date.now;
+  }
+
+  /**
+   * Marks participants as gone whose connections went silent (no heartbeat for STALE_MS). Call it
+   * every few seconds. Relays can't always tell the host that a tab was closed; this always works.
+   */
+  sweep(): void {
+    let changed = false;
+    for (const c of this.conns) {
+      if (c.pid && c.heartbeat && !c.away && this.now() - c.lastSeen > STALE_MS) {
+        c.away = true;
+        if (!this.present(c.pid)) changed = this.room.leave(c.pid) || changed;
+      }
+    }
+    if (changed) this.broadcast();
+  }
+
+  /** Is the participant still here on some connection? */
+  private present(pid: string): boolean {
+    return [...this.conns].some((c) => c.pid === pid && !c.away);
   }
 
   get roomId(): string { return this.room.id; }
@@ -51,7 +88,7 @@ export class HostEngine {
   setJira(jira: JiraGateway | null): void { this.jira = jira; }
 
   connect(send: (m: ServerMessage) => void): PeerLink {
-    const conn: Conn = { send, pid: null };
+    const conn: Conn = { send, pid: null, lastSeen: this.now(), heartbeat: false, away: false };
     this.conns.add(conn);
     return {
       receive: (raw) => this.receive(conn, raw),
@@ -77,14 +114,27 @@ export class HostEngine {
     if (!this.conns.delete(conn) || !conn.pid) return;
     const pid = conn.pid;
     // Only mark offline if this participant has no other open link (multiple tabs).
-    if (![...this.conns].some((c) => c.pid === pid)) { this.room.leave(pid); this.broadcast(); }
+    if (!this.present(pid) && this.room.leave(pid)) this.broadcast();
   }
 
   private async receive(conn: Conn, raw: string): Promise<void> {
     if (!this.conns.has(conn)) return;
     try {
       const msg = parseClientMessage(raw);
-      if (msg.type === "ping") { this.safeSend(conn, { type: "pong" }); return; }
+      conn.lastSeen = this.now();
+      if (msg.type === "leave") {
+        // The tab is closing: gone right away (unless another tab of theirs is still here).
+        conn.away = true;
+        if (conn.pid && !this.present(conn.pid) && this.room.leave(conn.pid)) this.broadcast();
+        return;
+      }
+      // Anything else on this connection means they're here (back from a closed-looking tab,
+      // a frozen phone, or after a silence).
+      if (conn.away) {
+        conn.away = false;
+        if (conn.pid && this.room.rejoin(conn.pid)) this.broadcast();
+      }
+      if (msg.type === "ping") { conn.heartbeat = true; this.safeSend(conn, { type: "pong" }); return; }
       if (msg.type === "join") {
         if (conn.pid) throw new RoomError("INVALID", "Already joined");
         if (msg.roomId.toUpperCase() !== this.room.id) throw new RoomError("NOT_FOUND", "Room not found");

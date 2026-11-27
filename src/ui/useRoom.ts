@@ -109,8 +109,11 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
       const stopPeer = hostRoom(engine, { url: RELAY_URL, hostKey: store.hostKey(roomId) }, (s) => setHostPeer(s));
       const onHide = () => save();
       window.addEventListener("pagehide", onHide);
+      // Guests that went silent (closed tab, lost network) leave the room.
+      const sweeper = setInterval(() => engine.sweep(), 5_000);
       return () => {
         alive = false;
+        clearInterval(sweeper);
         clearTimeout(probeTimer);
         window.removeEventListener("pagehide", onHide);
         stopPeer();
@@ -122,14 +125,27 @@ export function useRoom(opts: { roomId: string; name: string; role: Role; enable
     }
 
     const guest = joinRoom(roomId, {
-      onOpen: () => guest.send(join()),
+      // The first ping tells the host this client sends heartbeats (so its silence will mean "gone").
+      onOpen: () => { guest.send(join()); guest.send({ type: "ping" }); },
       onMessage: deliver,
       onState: (s) => setStatus(s === "open" ? "open" : s === "host-offline" ? "host-offline" : s === "connecting" ? "connecting" : "reconnecting"),
     }, RELAY_URL);
     sendRef.current = (m) => {
       if (!guest.send(m)) setError({ code: "OFFLINE", message: "Not connected to the host — reconnecting…", id: ++errId.current });
     };
-    return () => { guest.stop(); sendRef.current = () => {}; };
+    // Presence: a heartbeat to the host, and an explicit goodbye when the tab closes. (A reload
+    // also says goodbye; the page joins again right after, with its token and its vote.)
+    const heartbeat = setInterval(() => guest.send({ type: "ping" }), 15_000);
+    const bye = () => { guest.send({ type: "leave" }); };
+    const back = (e: PageTransitionEvent) => { if (e.persisted) guest.send({ type: "ping" }); };
+    window.addEventListener("pagehide", bye);
+    window.addEventListener("pageshow", back);
+    return () => {
+      clearInterval(heartbeat);
+      window.removeEventListener("pagehide", bye);
+      window.removeEventListener("pageshow", back);
+      guest.stop(); sendRef.current = () => {};
+    };
   }, [roomId, name, role, enabled, hosting]);
 
   const send = useCallback((m: ClientMessage) => sendRef.current(m), []);

@@ -114,7 +114,7 @@ export default function VotePanel({ ticket, me, send }: {
       {myPattern && !revealed && (
         <p className="my-back small">
           <span className="back-swatch" style={{ backgroundImage: myPattern.backgroundImage, borderColor: myPattern.accent }} />
-          Your card&apos;s back this round — the same back on the table means the same card.
+          Your card&apos;s back this round. Everyone&apos;s back is different, so nobody can tell who picked what.
         </p>
       )}
     </section>
